@@ -1,0 +1,12 @@
+.litgraph/
+.env
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+mcp.json
+
+# Reference implementation (clone separately)
+external/
