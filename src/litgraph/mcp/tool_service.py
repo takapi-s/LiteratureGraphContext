@@ -48,11 +48,12 @@ class MCPToolService:
                 return self.finder.compare_papers(args["paper_ids"])
             if name == "build_literature_matrix":
                 return self.finder.build_literature_matrix(args["topic"])
-            if name == "find_research_gaps":
+            if name == "get_paper_neighbors":
                 return truncate_results(
-                    self.finder.find_research_gaps(
-                        args["topic"],
-                        min_papers=int(args.get("min_papers", 1)),
+                    self.finder.get_paper_neighbors(
+                        args["paper_id"],
+                        relationships=args.get("relationships"),
+                        include_summary=bool(args.get("include_summary", False)),
                     )
                 )
             if name == "generate_related_work_outline":

@@ -72,6 +72,15 @@ class GraphQueryInterface(ABC):
         ...
 
     @abstractmethod
+    def get_paper_neighbors(
+        self,
+        paper_id: str,
+        relationships: Optional[List[str]] = None,
+        include_summary: bool = False,
+    ) -> List[Dict[str, Any]]:
+        ...
+
+    @abstractmethod
     def export_graph_json(self) -> Dict[str, Any]:
         ...
 

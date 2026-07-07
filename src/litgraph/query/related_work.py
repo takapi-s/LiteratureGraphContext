@@ -92,7 +92,7 @@ def generate_related_work_outline(
         "order": order,
         "title": f"Positioning of the current study on {topic}",
         "papers": [],
-        "note": "Use gaps and contrasts from find_research_gaps to position your contribution.",
+        "note": "Use find_limitations and get_paper_neighbors with the connected agent to position your contribution.",
     })
 
     markdown_lines = ["## Related Work Outline", ""]

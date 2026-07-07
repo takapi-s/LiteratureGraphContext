@@ -70,10 +70,11 @@ def config_set(
 @app.command("parse")
 def parse_cmd(
     all_files: bool = typer.Option(False, "--all", help="Parse all files, not only changed"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show per-paper section and reference details"),
 ) -> None:
     """Parse PDFs, Markdown notes, and BibTeX metadata into cache."""
     ctx = config_manager.resolve_context()
-    result = helpers.parse_papers(ctx, only_changed=not all_files)
+    result = helpers.parse_papers(ctx, only_changed=not all_files, verbose=verbose)
     console.print(
         f"Parsed {result['parsed']} paper(s), {result.get('bib_files', 0)} bib file(s)."
     )
@@ -126,7 +127,8 @@ def build_cmd(
     result = helpers.build_paper_graph(ctx, enrich_s2=enrich_s2)
     console.print(
         f"Indexed {result.get('papers_indexed', 0)} paper(s), "
-        f"nodes={result.get('nodes', 0)}, edges={result.get('edges', 0)}."
+        f"nodes={result.get('nodes', 0)}, edges={result.get('edges', 0)}, "
+        f"cites_from_references={result.get('cites_from_references', 0)}."
     )
 
 
@@ -332,14 +334,14 @@ def query_claim(
     helpers.print_query_result(result)
 
 
-@query_app.command("gaps")
-def query_gaps(
-    topic: str = typer.Option(..., "--topic"),
-    min_papers: int = typer.Option(1, "--min-papers"),
+@query_app.command("neighbors")
+def query_neighbors(
+    paper_id: str = typer.Option(..., "--paper-id"),
+    include_summary: bool = typer.Option(False, "--include-summary"),
 ) -> None:
-    """Find research gaps from clustered limitations."""
+    """List graph neighbors (CITES, CONTRASTS_WITH, EXTENDS) for a paper."""
     ctx = config_manager.resolve_context()
-    result = helpers.run_query(ctx, "gaps", topic=topic, min_papers=min_papers)
+    result = helpers.run_query(ctx, "neighbors", paper_id=paper_id, include_summary=include_summary)
     helpers.print_query_result(result)
 
 

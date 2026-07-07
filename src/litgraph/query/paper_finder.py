@@ -8,9 +8,6 @@ from typing import Any, Dict, List, Optional
 from litgraph.graph.db_factory import get_graph_store
 from litgraph.graph.normalizer import EntityNormalizer
 from litgraph.query.comparison import comparison_markdown
-
-
-from litgraph.query.gap_analysis import find_research_gaps as cluster_gaps
 from litgraph.query.related_work import generate_related_work_outline
 
 
@@ -95,27 +92,20 @@ class PaperFinder:
             "markdown_table": comparison_markdown(rows),
         }
 
-    def collect_all_limitations(self) -> List[Dict[str, Any]]:
-        items: List[Dict[str, Any]] = []
-        for paper in self.list_papers():
-            pid = paper.get("paper_id")
-            if not pid:
-                continue
-            full = self.get_paper(pid)
-            if not full:
-                continue
-            for lim in full.get("limitations") or []:
-                if isinstance(lim, dict):
-                    items.append({
-                        "paper_id": pid,
-                        "title": full.get("title"),
-                        "limitation": lim.get("limitation") or lim.get("text", ""),
-                        "text": lim.get("text", lim.get("limitation", "")),
-                        "page": lim.get("page"),
-                        "section": lim.get("section"),
-                        "evidence_text": lim.get("evidence_text", ""),
-                    })
-        return items
+    def get_paper_neighbors(
+        self,
+        paper_id: str,
+        relationships: Optional[List[str]] = None,
+        include_summary: bool = False,
+    ) -> Dict[str, Any]:
+        if not self.get_paper(paper_id):
+            return {"error": f"Paper not found: {paper_id}"}
+        neighbors = self.store.get_paper_neighbors(
+            paper_id,
+            relationships=relationships,
+            include_summary=include_summary,
+        )
+        return {"paper_id": paper_id, "neighbors": neighbors, "count": len(neighbors)}
 
     def _papers_full(self) -> List[Dict[str, Any]]:
         papers = []
@@ -126,9 +116,6 @@ class PaperFinder:
                 if full:
                     papers.append(full)
         return papers
-
-    def find_research_gaps(self, topic: str, min_papers: int = 1) -> Dict[str, Any]:
-        return cluster_gaps(topic, self.collect_all_limitations(), min_papers=min_papers)
 
     def related_work_outline(self, topic: str) -> Dict[str, Any]:
         return generate_related_work_outline(topic, self._papers_full())

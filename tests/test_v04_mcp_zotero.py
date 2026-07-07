@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from litgraph.mcp.server import MCPServer
 
 
-def test_mcp_find_research_gaps(project_tmp, monkeypatch):
+def test_mcp_get_paper_neighbors(project_tmp, monkeypatch):
     monkeypatch.chdir(project_tmp)
     from litgraph.cli.config_manager import init_project, resolve_context
     from tests.fixtures.extracted_fixtures import FIXTURES, write_fixtures
@@ -22,7 +22,8 @@ def test_mcp_find_research_gaps(project_tmp, monkeypatch):
         "params": {},
     })
     names = {t["name"] for t in resp["result"]["tools"]}
-    assert "find_research_gaps" in names
+    assert "get_paper_neighbors" in names
+    assert "find_research_gaps" not in names
     assert "generate_related_work_outline" in names
 
     call = server.handle_request({
@@ -30,12 +31,12 @@ def test_mcp_find_research_gaps(project_tmp, monkeypatch):
         "id": 11,
         "method": "tools/call",
         "params": {
-            "name": "find_research_gaps",
-            "arguments": {"topic": "event"},
+            "name": "get_paper_neighbors",
+            "arguments": {"paper_id": "mobility_gnn_2024"},
         },
     })
     payload = json.loads(call["result"]["content"][0]["text"])
-    assert "gaps" in payload
+    assert "neighbors" in payload
 
 
 def test_mcp_related_work_outline(project_tmp, monkeypatch):

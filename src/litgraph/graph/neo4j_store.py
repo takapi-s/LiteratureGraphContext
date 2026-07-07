@@ -305,6 +305,72 @@ class Neo4jGraphStore(GraphQueryInterface):
         all_ids = [p["paper_id"] for p in self.list_papers()]
         return build_literature_matrix_rows(topic, self._papers_for_compare(all_ids))
 
+    def get_paper_neighbors(
+        self,
+        paper_id: str,
+        relationships: Optional[List[str]] = None,
+        include_summary: bool = False,
+    ) -> List[Dict[str, Any]]:
+        rels = relationships or ["CITES", "CITED_BY", "CONTRASTS_WITH", "EXTENDS", "EXTENDED_BY"]
+        neighbors: List[Dict[str, Any]] = []
+        seen: set = set()
+
+        def add_neighbor(other_id: str, title: str, relationship: str, direction: str) -> None:
+            key = (other_id, relationship, direction)
+            if key in seen or other_id == paper_id:
+                return
+            seen.add(key)
+            entry: Dict[str, Any] = {
+                "paper_id": other_id,
+                "title": title,
+                "relationship": relationship,
+                "direction": direction,
+            }
+            if include_summary:
+                full = self.get_paper(other_id)
+                if full:
+                    entry["tasks"] = full.get("tasks", [])
+                    entry["methods"] = full.get("methods", [])
+                    entry["limitation_count"] = len(full.get("limitations") or [])
+            neighbors.append(entry)
+
+        if "CITES" in rels:
+            for row in self._run(
+                "MATCH (p:Paper {id: $id})-[:CITES]->(n:Paper) RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id},
+            ):
+                add_neighbor(row["paper_id"], row.get("title", ""), "CITES", "out")
+
+        if "CITED_BY" in rels:
+            for row in self._run(
+                "MATCH (n:Paper)-[:CITES]->(p:Paper {id: $id}) RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id},
+            ):
+                add_neighbor(row["paper_id"], row.get("title", ""), "CITED_BY", "in")
+
+        if "CONTRASTS_WITH" in rels:
+            for row in self._run(
+                "MATCH (p:Paper {id: $id})-[:CONTRASTS_WITH]-(n:Paper) RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id},
+            ):
+                add_neighbor(row["paper_id"], row.get("title", ""), "CONTRASTS_WITH", "undirected")
+
+        if "EXTENDS" in rels:
+            for row in self._run(
+                "MATCH (p:Paper {id: $id})-[:EXTENDS]->(n:Paper) RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id},
+            ):
+                add_neighbor(row["paper_id"], row.get("title", ""), "EXTENDS", "out")
+
+        if "EXTENDED_BY" in rels:
+            for row in self._run(
+                "MATCH (n:Paper)-[:EXTENDS]->(p:Paper {id: $id}) RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id},
+            ):
+                add_neighbor(row["paper_id"], row.get("title", ""), "EXTENDED_BY", "in")
+
+        return neighbors
+
     def export_graph_json(self) -> Dict[str, Any]:
         nodes: List[Dict[str, Any]] = []
         for label, fields in [

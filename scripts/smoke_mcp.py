@@ -53,8 +53,8 @@ def main() -> None:
     assert "markdown_table" in compare
     print("compare_papers: ok (markdown_table)")
 
-    gaps = _call(server, "find_research_gaps", {"topic": "event", "min_papers": 1})
-    print(f"find_research_gaps: {len(gaps.get('gaps', []))} gap(s)")
+    neighbors = _call(server, "get_paper_neighbors", {"paper_id": "mobility_gnn_2024"})
+    print(f"get_paper_neighbors: {neighbors.get('count', 0)} neighbor(s)")
 
     print("MCP smoke test passed.")
 

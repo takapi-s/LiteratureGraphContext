@@ -72,7 +72,7 @@ def scan_papers(
     }
 
 
-def parse_papers(ctx: ResolvedContext, only_changed: bool = True) -> Dict[str, Any]:
+def parse_papers(ctx: ResolvedContext, only_changed: bool = True, *, verbose: bool = False) -> Dict[str, Any]:
     target = ctx.papers_dir
     ctx.bib_cache_dir.mkdir(parents=True, exist_ok=True)
     files = discover_papers(target)
@@ -81,17 +81,52 @@ def parse_papers(ctx: ResolvedContext, only_changed: bool = True) -> Dict[str, A
 
     parsed_ids: List[str] = []
     bib_files = 0
+    parse_details: List[Dict[str, Any]] = []
     for file_path in to_parse:
         kind, paper_id = parse_file(file_path, ctx.bib_cache_dir, ctx.parsed_cache_dir)
         if kind in ("pdf", "md") and paper_id:
             parsed_ids.append(paper_id)
+            if verbose and kind == "pdf":
+                detail = _parse_verbose_detail(ctx, paper_id)
+                if detail:
+                    parse_details.append(detail)
         elif kind == "bib":
             bib_files += 1
+
+    if verbose:
+        for detail in parse_details:
+            pid = detail.get("paper_id", "")
+            sections = ", ".join(detail.get("sections") or []) or "(none)"
+            fallback = detail.get("fallback_fulltext", False)
+            ref_count = detail.get("reference_count", 0)
+            line = f"  {pid}: sections=[{sections}] references={ref_count}"
+            if fallback:
+                console.print(f"[yellow]{line} (FullText fallback)[/yellow]")
+            else:
+                console.print(line)
 
     return {
         "parsed": len(parsed_ids),
         "bib_files": bib_files,
         "paper_ids": parsed_ids,
+    }
+
+
+def _parse_verbose_detail(ctx: ResolvedContext, paper_id: str) -> Optional[Dict[str, Any]]:
+    path = ctx.parsed_cache_dir / f"{paper_id}.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    meta = data.get("section_meta") or {}
+    ref_meta = data.get("reference_meta") or {}
+    return {
+        "paper_id": paper_id,
+        "sections": meta.get("section_names") or [s.get("name") for s in data.get("sections", [])],
+        "fallback_fulltext": meta.get("fallback_fulltext", False),
+        "reference_count": ref_meta.get("count", len(data.get("references") or [])),
     }
 
 
@@ -506,7 +541,7 @@ def run_query(
     paper_id: Optional[str] = None,
     claim_id: Optional[str] = None,
     paper_ids: Optional[List[str]] = None,
-    min_papers: Optional[int] = None,
+    include_summary: bool = False,
 ) -> Dict[str, Any]:
     finder = _finder(ctx)
     try:
@@ -526,8 +561,11 @@ def run_query(
             return finder.compare_papers(paper_ids or [])
         if query_type == "matrix":
             return finder.build_literature_matrix(topic or "")
-        if query_type == "gaps":
-            return finder.find_research_gaps(topic or "", min_papers=min_papers or 1)
+        if query_type == "neighbors":
+            return finder.get_paper_neighbors(
+                paper_id or "",
+                include_summary=include_summary,
+            )
         if query_type == "outline":
             return finder.related_work_outline(topic or "")
         return {"error": f"Unknown query type: {query_type}"}
@@ -548,10 +586,18 @@ def print_query_result(result: Dict[str, Any]) -> None:
     if "markdown_outline" in result:
         console.print(result["markdown_outline"])
         return
-    if "gaps" in result:
-        for gap in result.get("gaps", []):
-            console.print(f"\n[bold]{gap.get('gap')}[/bold]")
-            console.print(f"  Papers: {', '.join(gap.get('supporting_papers', []))}")
+    if "neighbors" in result:
+        table = Table(title=f"Neighbors: {result.get('paper_id', '')}")
+        table.add_column("Paper")
+        table.add_column("Relationship")
+        table.add_column("Direction")
+        for n in result.get("neighbors", []):
+            table.add_row(
+                f"{n.get('paper_id')} ({n.get('title', '')[:40]})",
+                str(n.get("relationship", "")),
+                str(n.get("direction", "")),
+            )
+        console.print(table)
         return
     if "limitations" in result:
         table = Table(title="Limitations")

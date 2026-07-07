@@ -88,16 +88,20 @@ TOOLS = {
         "description": "List all background extraction jobs.",
         "inputSchema": {"type": "object", "properties": {}},
     },
-    "find_research_gaps": {
-        "name": "find_research_gaps",
-        "description": "Cluster limitations into research gap candidates with evidence for a topic.",
+    "get_paper_neighbors": {
+        "name": "get_paper_neighbors",
+        "description": "List neighboring papers via CITES, CITED_BY, CONTRASTS_WITH, EXTENDS graph edges.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "topic": {"type": "string"},
-                "min_papers": {"type": "integer", "default": 1},
+                "paper_id": {"type": "string"},
+                "relationships": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "include_summary": {"type": "boolean", "default": False},
             },
-            "required": ["topic"],
+            "required": ["paper_id"],
         },
     },
     "generate_related_work_outline": {

@@ -46,8 +46,16 @@ def handle_build_literature_matrix(finder: PaperFinder, topic: str) -> Dict[str,
     return _service(finder).handle_tool_call("build_literature_matrix", {"topic": topic})
 
 
-def handle_find_research_gaps(finder: PaperFinder, topic: str, min_papers: int = 1) -> Dict[str, Any]:
-    return _service(finder).handle_tool_call("find_research_gaps", {"topic": topic, "min_papers": min_papers})
+def handle_get_paper_neighbors(
+    finder: PaperFinder,
+    paper_id: str,
+    relationships: List[str] | None = None,
+    include_summary: bool = False,
+) -> Dict[str, Any]:
+    args: Dict[str, Any] = {"paper_id": paper_id, "include_summary": include_summary}
+    if relationships is not None:
+        args["relationships"] = relationships
+    return _service(finder).handle_tool_call("get_paper_neighbors", args)
 
 
 def handle_generate_related_work_outline(finder: PaperFinder, topic: str) -> Dict[str, Any]:
