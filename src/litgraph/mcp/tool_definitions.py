@@ -53,7 +53,7 @@ TOOLS = {
     },
     "compare_papers": {
         "name": "compare_papers",
-        "description": "Compare multiple papers by task, method, dataset, and limitation.",
+        "description": "Compare multiple papers by task, method, dataset, metric, contribution, limitation, and difference.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -63,6 +63,50 @@ TOOLS = {
                 }
             },
             "required": ["paper_ids"],
+        },
+    },
+    "build_literature_matrix": {
+        "name": "build_literature_matrix",
+        "description": "Build a topic-based literature matrix from indexed papers.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
+        },
+    },
+    "check_job_status": {
+        "name": "check_job_status",
+        "description": "Check extraction job status and progress.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "string"}},
+            "required": ["job_id"],
+        },
+    },
+    "list_jobs": {
+        "name": "list_jobs",
+        "description": "List all background extraction jobs.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    "find_research_gaps": {
+        "name": "find_research_gaps",
+        "description": "Cluster limitations into research gap candidates with evidence for a topic.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string"},
+                "min_papers": {"type": "integer", "default": 1},
+            },
+            "required": ["topic"],
+        },
+    },
+    "generate_related_work_outline": {
+        "name": "generate_related_work_outline",
+        "description": "Generate a related work section outline by topic with supporting papers.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
         },
     },
 }
