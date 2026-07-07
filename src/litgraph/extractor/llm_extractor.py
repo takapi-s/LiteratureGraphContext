@@ -10,6 +10,48 @@ from litgraph.extractor.prompts import EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER
 from litgraph.extractor.providers import get_provider
 from litgraph.extractor.schema import PaperExtraction
 
+STRING_LIST_FIELDS = ("tasks", "methods", "datasets", "metrics")
+
+
+def _coerce_string_item(item: Any) -> str:
+    if isinstance(item, str):
+        return item.strip()
+    if isinstance(item, dict):
+        for key in ("text", "name", "value", "method", "task", "dataset", "metric"):
+            value = item.get(key)
+            if value:
+                return str(value).strip()
+        return ""
+    if item is None:
+        return ""
+    return str(item).strip()
+
+
+def _normalize_string_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if not isinstance(value, list):
+        text = _coerce_string_item(value)
+        return [text] if text else []
+    out: List[str] = []
+    for item in value:
+        text = _coerce_string_item(item)
+        if text:
+            out.append(text)
+    return out
+
+
+def normalize_extraction_raw(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Coerce common LLM shape mistakes before Pydantic validation."""
+    out = dict(raw)
+    for field in STRING_LIST_FIELDS:
+        if field in out:
+            out[field] = _normalize_string_list(out.get(field))
+    return out
+
 
 def _sections_text(sections: List[Dict[str, Any]]) -> str:
     parts = []
@@ -31,7 +73,7 @@ def extract_paper(
     )
     raw = provider.complete_json(EXTRACTION_SYSTEM_PROMPT, user_prompt)
     raw.setdefault("paper_id", parsed.get("paper_id"))
-    return PaperExtraction.model_validate(raw)
+    return PaperExtraction.model_validate(normalize_extraction_raw(raw))
 
 
 def save_extraction(path: Path, extraction: PaperExtraction) -> None:

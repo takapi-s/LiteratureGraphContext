@@ -11,5 +11,8 @@ Sections:
 {sections_text}
 
 Return JSON with keys: paper_id, title, year, tasks, methods, datasets, metrics, contributions, claims, limitations.
-Each item in contributions/claims/limitations must be an object with: text, evidence_text, page, section.
+
+Field types:
+- tasks, methods, datasets, metrics: arrays of plain strings (e.g. ["Graph Neural Network", "causal inference"]). Do NOT use objects for these fields.
+- contributions, claims, limitations: arrays of objects, each with: text, evidence_text, page, section.
 """
