@@ -48,6 +48,47 @@ Prioritized under the design philosophy above.
 | **Research gap clustering** | Use `find_limitations` + `compare_papers`; agent interprets gaps |
 | **Related work prose** | `generate_related_work_outline` is optional sugar |
 
+### Active — MCP tool surface (too many tools)
+
+v0.6 exposes **14 MCP tools**. Agents must choose among overlapping entry points (`search_papers` vs `find_papers_by_method` / `find_papers_by_task` vs `build_literature_matrix`; `get_paper_neighbors` vs `expand_paper_graph`). Evaluation showed agents pick the wrong tool or call redundant tools. **Target for v0.7: 6–8 core query tools**; ingest/job ops stay CLI-only.
+
+#### Problem
+
+| Issue | Example |
+|---|---|
+| **Redundant discovery** | `find_papers_by_task("traffic flow prediction")` → 0 hits; `search_papers` → 8+ hits (keyword + embedding). Task/method tools are already internal channels of `search_papers`. |
+| **Split graph traversal** | `get_paper_neighbors` (1-hop) and `expand_paper_graph` (multi-hop) differ only by `hops`. |
+| **Agent sugar in LGC** | `generate_related_work_outline` drafts prose — delegated to the connected agent by design. |
+| **Ingest ops on MCP** | `list_jobs` / `check_job_status` are pipeline admin, not literature queries. |
+| **Narrow evidence lookup** | `get_evidence_for_claim` serves claim IDs agents rarely have without `summarize_paper` first. |
+
+#### Consolidation plan (v0.7)
+
+| Action | Tools | Replacement / note |
+|---|---|---|
+| **Keep (core)** | `search_papers`, `summarize_paper`, `compare_papers`, `find_limitations`, `list_papers` | Primary agent workflow: discover → detail → compare → limitations |
+| **Merge** | `get_paper_neighbors` + `expand_paper_graph` | Single `explore_paper_graph(paper_id, hops=1, relationships?, include_summary?)` — `hops=1` replaces neighbors |
+| **Deprecate → CLI only** | `find_papers_by_method`, `find_papers_by_task` | Keep as `litgraph query` subcommands; remove from MCP. `search_papers` covers discovery; optional `search_mode: method \| task` for exact Task/Method node lookup |
+| **Deprecate → CLI only** | `build_literature_matrix` | Matrix rows available via `compare_papers` on `search_papers` results, or `litgraph query matrix` |
+| **Remove from MCP** | `generate_related_work_outline` | Agent drafts from `compare_papers` + `find_limitations` context (same rationale as removed `find_research_gaps`) |
+| **Remove from MCP** | `list_jobs`, `check_job_status` | Background extract status via CLI (`litgraph jobs`); not part of literature Q&A |
+| **Fold or defer** | `get_evidence_for_claim` | Return `claims` + evidence inside `summarize_paper`; drop standalone tool unless claim-level search is needed |
+
+**Target MCP surface (7 tools):** `list_papers`, `search_papers`, `summarize_paper`, `compare_papers`, `find_limitations`, `explore_paper_graph` (merged), and optionally one ingest helper if watch/sync lands.
+
+#### Migration steps
+
+1. **v0.7.0** — Add `explore_paper_graph`; mark `get_paper_neighbors` / `expand_paper_graph` deprecated in tool descriptions.
+2. **v0.7.x** — MCP server registers reduced tool set; deprecated names return a redirect message with the replacement tool name for one minor release.
+3. **v0.8.0** — Remove deprecated MCP tools; keep CLI equivalents (`litgraph query method`, `task`, `matrix`, `neighbors`, `expand`).
+4. **Docs** — Update Cursor skill, MCP instructions, and `litgraph test-mcp` smoke cases to the reduced set.
+
+#### Success criteria
+
+- Agent smoke workflows (`search → summarize → compare → limitations → graph`) pass with ≤ 7 MCP tools.
+- No regression in discovery quality vs current `search_papers` + `expand_paper_graph` path.
+- `litgraph test-mcp` covers the reduced contract only.
+
 ### Deferred (acceptable for now)
 
 | Area | Limitation | When to revisit |
@@ -66,6 +107,17 @@ Prioritized under the design philosophy above.
 | **PDF layout** | Full layout reconstruction out of scope |
 | **Free-form KG** | Fixed literature-review schema only |
 | **Graphiti integration** | Reference only; no runtime dependency |
+
+---
+
+## v0.7 — MCP tool consolidation
+
+- [ ] **`explore_paper_graph`** — merge `get_paper_neighbors` + `expand_paper_graph` (`hops` parameter)
+- [ ] **Deprecate attribute search on MCP** — `find_papers_by_method`, `find_papers_by_task` → CLI only; optional `search_mode` on `search_papers`
+- [ ] **Remove agent-sugar tools from MCP** — `generate_related_work_outline`, `build_literature_matrix`
+- [ ] **Remove ingest tools from MCP** — `list_jobs`, `check_job_status` → CLI only
+- [ ] **Fold claim evidence** — `get_evidence_for_claim` into `summarize_paper` or defer
+- [ ] **Update MCP tests & skill** — `test-mcp`, smoke cases, Cursor skill to ≤ 7 tools
 
 ---
 
