@@ -24,6 +24,22 @@ class GraphQueryInterface(ABC):
         ...
 
     @abstractmethod
+    def upsert_bib_only_paper(self, paper_id: str, metadata: Dict[str, Any]) -> None:
+        ...
+
+    @abstractmethod
+    def upsert_cites_edge(self, citing_id: str, cited_id: str) -> None:
+        ...
+
+    @abstractmethod
+    def upsert_paper_relationship(self, from_id: str, to_id: str, rel_type: str) -> None:
+        ...
+
+    @abstractmethod
+    def delete_paper(self, paper_id: str) -> None:
+        ...
+
+    @abstractmethod
     def list_papers(self) -> List[Dict[str, Any]]:
         ...
 
@@ -52,5 +68,13 @@ class GraphQueryInterface(ABC):
         ...
 
     @abstractmethod
+    def build_literature_matrix(self, topic: str) -> List[Dict[str, Any]]:
+        ...
+
+    @abstractmethod
     def export_graph_json(self) -> Dict[str, Any]:
+        ...
+
+    @abstractmethod
+    def close(self) -> None:
         ...

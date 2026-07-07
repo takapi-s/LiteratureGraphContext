@@ -3,25 +3,49 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Any, Dict, List
+import os
+from typing import Any, Dict, List, Set
 
-from litgraph.graph.kuzu_store import get_graph_store
+from litgraph.cli.config_manager import ResolvedContext, get_config_value
+from litgraph.graph.citation_builder import bib_only_entries, build_citation_pairs
+from litgraph.graph.db_factory import get_graph_store
 from litgraph.graph.normalizer import EntityNormalizer
-from litgraph.cli.config_manager import ResolvedContext
+from litgraph.graph.reasoning import infer_contrasts_and_extends
+from litgraph.integrations.semantic_scholar import enrich_metadata
 from litgraph.parser.bib_linker import link_bib_to_paper
 from litgraph.parser.bib_parser import load_all_bib_entries
 
 
-def build_graph(ctx: ResolvedContext, extractions: List[Dict[str, Any]], export_json: bool = True) -> Dict[str, Any]:
-    store = get_graph_store(ctx.db_path)
+def _neo4j_config(ctx: ResolvedContext) -> Dict[str, Any]:
+    return {
+        "uri": os.getenv("NEO4J_URI") or get_config_value(ctx, "neo4j_uri", "NEO4J_URI"),
+        "user": os.getenv("NEO4J_USER") or get_config_value(ctx, "neo4j_user", "NEO4J_USER"),
+        "password": os.getenv("NEO4J_PASSWORD") or get_config_value(ctx, "neo4j_password", "NEO4J_PASSWORD"),
+        "database": os.getenv("NEO4J_DATABASE") or get_config_value(ctx, "neo4j_database", "NEO4J_DATABASE"),
+    }
+
+
+def _store_for(ctx: ResolvedContext):
+    backend = str(get_config_value(ctx, "database", "LITGRAPH_DATABASE"))
+    return get_graph_store(ctx.db_path, backend=backend, neo4j_config=_neo4j_config(ctx))
+
+
+def build_graph(
+    ctx: ResolvedContext,
+    extractions: List[Dict[str, Any]],
+    export_json: bool = True,
+    enrich_s2: bool = False,
+) -> Dict[str, Any]:
+    store = _store_for(ctx)
     store.initialize_schema()
     normalizer = EntityNormalizer(ctx.aliases_path)
     bib_entries = load_all_bib_entries(ctx.bib_cache_dir)
+    indexed_ids: Set[str] = set()
 
     for raw in extractions:
         normalized = normalizer.normalize_extraction(raw)
         store.upsert_paper_graph(normalized)
+        indexed_ids.add(normalized["paper_id"])
         bib_match = link_bib_to_paper(
             normalized["paper_id"],
             raw.get("path"),
@@ -29,7 +53,38 @@ def build_graph(ctx: ResolvedContext, extractions: List[Dict[str, Any]], export_
             bib_entries,
         )
         if bib_match:
-            store.upsert_paper_metadata(normalized["paper_id"], bib_match)
+            metadata = dict(bib_match)
+            if enrich_s2:
+                extra = enrich_metadata(metadata.get("title", ""), metadata.get("doi"))
+                if extra:
+                    metadata.update({k: v for k, v in extra.items() if v})
+            store.upsert_paper_metadata(normalized["paper_id"], metadata)
+
+    extraction_ids = {raw["paper_id"] for raw in extractions}
+    bib_only = bib_only_entries(bib_entries, extraction_ids)
+
+    for entry in bib_only:
+        pid = entry["paper_id"]
+        metadata = dict(entry)
+        if enrich_s2:
+            extra = enrich_metadata(metadata.get("title", ""), metadata.get("doi"))
+            if extra:
+                metadata.update({k: v for k, v in extra.items() if v})
+        store.upsert_bib_only_paper(pid, metadata)
+        indexed_ids.add(pid)
+
+    for citing, cited in build_citation_pairs(bib_entries, indexed_ids):
+        store.upsert_cites_edge(citing, cited)
+
+    all_papers = [store.get_paper(pid) for pid in sorted(indexed_ids)]
+    all_papers = [p for p in all_papers if p]
+    cites_pairs = build_citation_pairs(bib_entries, indexed_ids)
+    contrasts, extends = infer_contrasts_and_extends(all_papers, cites_pairs)
+    for a, b in contrasts:
+        store.upsert_paper_relationship(a, b, "CONTRASTS_WITH")
+        store.upsert_paper_relationship(b, a, "CONTRASTS_WITH")
+    for a, b in extends:
+        store.upsert_paper_relationship(a, b, "EXTENDS")
 
     graph_json = store.export_graph_json()
     if export_json:
@@ -37,12 +92,18 @@ def build_graph(ctx: ResolvedContext, extractions: List[Dict[str, Any]], export_
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(graph_json, f, indent=2, ensure_ascii=False)
 
+    store.close()
     return {
-        "papers_indexed": len(extractions),
+        "papers_indexed": len(indexed_ids),
         "nodes": len(graph_json.get("nodes", [])),
+        "edges": len(graph_json.get("edges", [])),
         "bib_entries_linked": sum(
             1
             for raw in extractions
             if link_bib_to_paper(raw["paper_id"], raw.get("path"), raw.get("title"), bib_entries)
         ),
+        "bib_only_papers": len(bib_only),
+        "cites_edges": len(cites_pairs),
+        "contrasts_edges": len(contrasts),
+        "extends_edges": len(extends),
     }
