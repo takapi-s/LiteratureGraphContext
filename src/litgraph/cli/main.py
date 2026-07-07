@@ -109,6 +109,7 @@ def extract_cmd(
         return
     extracted = result.get("extracted", 0)
     skipped = result.get("skipped", 0)
+    failed = result.get("failed") or []
     if skipped:
         console.print(
             f"Extracted {extracted} paper(s), skipped {skipped} already up to date "
@@ -116,6 +117,10 @@ def extract_cmd(
         )
     else:
         console.print(f"Extracted {extracted} paper(s) via {result.get('provider')}.")
+    if failed:
+        console.print(f"[red]Failed to extract {len(failed)} paper(s):[/red]")
+        for item in failed:
+            console.print(f"  - {item.get('paper_id')}: {item.get('error')}")
 
 
 @app.command("build")

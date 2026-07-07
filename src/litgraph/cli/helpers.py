@@ -26,6 +26,7 @@ from litgraph.utils.ids import paper_id_from_path
 
 console = Console()
 _job_manager = JobManager()
+EXTRACTION_MAX_RETRIES = 3
 
 
 def get_job_manager() -> JobManager:
@@ -165,8 +166,9 @@ def _run_extractions(
     *,
     job_id: Optional[str] = None,
     show_progress: bool = False,
-) -> List[str]:
+) -> Dict[str, Any]:
     extracted_ids: List[str] = []
+    failed: List[Dict[str, str]] = []
     total = len(parsed_docs)
 
     def _extract_one(doc: Dict[str, Any], index: int) -> None:
@@ -178,12 +180,30 @@ def _run_extractions(
                 processed_items=index - 1,
                 message=f"Extracting {paper_id}",
             )
-        extraction = extract_paper(doc, provider_name, model=model_name)
-        out = ctx.extracted_cache_dir / f"{paper_id}.json"
-        save_extraction(out, extraction)
-        extracted_ids.append(paper_id)
-        if job_id:
-            _job_manager.update_job(job_id, processed_items=index)
+
+        last_error: Optional[Exception] = None
+        for attempt in range(1, EXTRACTION_MAX_RETRIES + 1):
+            try:
+                extraction = extract_paper(doc, provider_name, model=model_name)
+                out = ctx.extracted_cache_dir / f"{paper_id}.json"
+                save_extraction(out, extraction)
+                extracted_ids.append(paper_id)
+                if job_id:
+                    _job_manager.update_job(job_id, processed_items=index)
+                return
+            except Exception as exc:
+                last_error = exc
+                if attempt < EXTRACTION_MAX_RETRIES:
+                    console.print(
+                        f"[yellow]Extraction failed for {paper_id} "
+                        f"(attempt {attempt}/{EXTRACTION_MAX_RETRIES}): {exc}[/yellow]"
+                    )
+
+        failed.append({"paper_id": paper_id, "error": str(last_error)})
+        console.print(
+            f"[red]Failed to extract {paper_id} after {EXTRACTION_MAX_RETRIES} attempts: "
+            f"{last_error}[/red]"
+        )
 
     if show_progress and not job_id and total > 0:
         if total == 1:
@@ -211,7 +231,7 @@ def _run_extractions(
     if job_id:
         _job_manager.update_job(job_id, processed_items=total, current_item=None)
 
-    return extracted_ids
+    return {"extracted_ids": extracted_ids, "failed": failed}
 
 
 def extract_papers(
@@ -260,7 +280,7 @@ def extract_papers(
             message="Extracting papers",
         )
 
-    extracted_ids = _run_extractions(
+    extraction_result = _run_extractions(
         ctx,
         parsed_docs,
         provider_name,
@@ -268,11 +288,14 @@ def extract_papers(
         job_id=job_id,
         show_progress=show_progress,
     )
+    extracted_ids = extraction_result["extracted_ids"]
+    failed = extraction_result["failed"]
 
     return {
         "extracted": len(extracted_ids),
         "skipped": skipped,
         "paper_ids": extracted_ids,
+        "failed": failed,
         "provider": provider_name,
     }
 
@@ -306,18 +329,21 @@ def extract_paper_ids(
     if not _confirm_external_api(ctx, provider_name, total_sections, skip_confirm):
         return {"extracted": 0, "skipped": skipped, "cancelled": True, "paper_ids": []}
 
-    extracted_ids = _run_extractions(
+    extraction_result = _run_extractions(
         ctx,
         docs,
         provider_name,
         model_name,
         show_progress=show_progress,
     )
+    extracted_ids = extraction_result["extracted_ids"]
+    failed = extraction_result["failed"]
 
     return {
         "extracted": len(extracted_ids),
         "skipped": skipped,
         "paper_ids": extracted_ids,
+        "failed": failed,
         "provider": provider_name,
     }
 

@@ -119,3 +119,32 @@ def test_extract_paper_ids_skips_cached(project_tmp, monkeypatch):
     assert result["extracted"] == 1
     assert result["skipped"] == 1
     assert calls == ["paper_b"]
+
+
+def test_extract_continues_after_failure_and_retries(project_tmp, monkeypatch):
+    ctx = resolve_context(project_tmp)
+    _write_parsed(ctx, "paper_a")
+    _write_parsed(ctx, "paper_b")
+    _write_parsed(ctx, "paper_c")
+
+    calls: dict[str, int] = {}
+
+    def fake_extract(doc, provider_name, model=None):
+        paper_id = doc["paper_id"]
+        calls[paper_id] = calls.get(paper_id, 0) + 1
+        if paper_id == "paper_b":
+            raise ValueError("validation failed")
+        return {"paper_id": paper_id, "title": paper_id}
+
+    monkeypatch.setattr("litgraph.cli.helpers.extract_paper", fake_extract)
+    monkeypatch.setattr("litgraph.cli.helpers.save_extraction", lambda path, extraction: None)
+
+    result = extract_papers(ctx, skip_confirm=True)
+
+    assert result["extracted"] == 2
+    assert result["paper_ids"] == ["paper_a", "paper_c"]
+    assert len(result["failed"]) == 1
+    assert result["failed"][0]["paper_id"] == "paper_b"
+    assert calls["paper_b"] == 3
+    assert calls["paper_a"] == 1
+    assert calls["paper_c"] == 1
