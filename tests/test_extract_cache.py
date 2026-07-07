@@ -8,6 +8,7 @@ import time
 
 from litgraph.cli.config_manager import resolve_context
 from litgraph.cli.helpers import extract_paper_ids, extract_papers
+from litgraph.extractor.schema import PaperExtraction
 from tests.fixtures.extracted_fixtures import FIXTURES
 
 
@@ -35,12 +36,11 @@ def test_extract_skips_already_extracted(project_tmp, monkeypatch):
 
     calls: list[str] = []
 
-    def fake_extract(doc, provider_name, model=None):
+    def fake_extract(doc, provider_name, model=None, doi=None):
         calls.append(doc["paper_id"])
-        return {"paper_id": doc["paper_id"], "title": doc["paper_id"]}
+        return PaperExtraction(paper_id=doc["paper_id"], title=doc["paper_id"])
 
     monkeypatch.setattr("litgraph.cli.helpers.extract_paper", fake_extract)
-    monkeypatch.setattr("litgraph.cli.helpers.save_extraction", lambda path, extraction: None)
 
     result = extract_papers(ctx, skip_confirm=True)
 
@@ -59,12 +59,11 @@ def test_extract_force_reextracts_all(project_tmp, monkeypatch):
 
     calls: list[str] = []
 
-    def fake_extract(doc, provider_name, model=None):
+    def fake_extract(doc, provider_name, model=None, doi=None):
         calls.append(doc["paper_id"])
-        return {"paper_id": doc["paper_id"], "title": doc["paper_id"]}
+        return PaperExtraction(paper_id=doc["paper_id"], title=doc["paper_id"])
 
     monkeypatch.setattr("litgraph.cli.helpers.extract_paper", fake_extract)
-    monkeypatch.setattr("litgraph.cli.helpers.save_extraction", lambda path, extraction: None)
 
     result = extract_papers(ctx, skip_confirm=True, force=True)
 
@@ -85,12 +84,11 @@ def test_extract_reextracts_when_parsed_is_newer(project_tmp, monkeypatch):
 
     calls: list[str] = []
 
-    def fake_extract(doc, provider_name, model=None):
+    def fake_extract(doc, provider_name, model=None, doi=None):
         calls.append(doc["paper_id"])
-        return {"paper_id": doc["paper_id"], "title": doc["paper_id"]}
+        return PaperExtraction(paper_id=doc["paper_id"], title=doc["paper_id"])
 
     monkeypatch.setattr("litgraph.cli.helpers.extract_paper", fake_extract)
-    monkeypatch.setattr("litgraph.cli.helpers.save_extraction", lambda path, extraction: None)
 
     result = extract_papers(ctx, skip_confirm=True)
 
@@ -107,12 +105,11 @@ def test_extract_paper_ids_skips_cached(project_tmp, monkeypatch):
 
     calls: list[str] = []
 
-    def fake_extract(doc, provider_name, model=None):
+    def fake_extract(doc, provider_name, model=None, doi=None):
         calls.append(doc["paper_id"])
-        return {"paper_id": doc["paper_id"], "title": doc["paper_id"]}
+        return PaperExtraction(paper_id=doc["paper_id"], title=doc["paper_id"])
 
     monkeypatch.setattr("litgraph.cli.helpers.extract_paper", fake_extract)
-    monkeypatch.setattr("litgraph.cli.helpers.save_extraction", lambda path, extraction: None)
 
     result = extract_paper_ids(ctx, ["paper_a", "paper_b"], skip_confirm=True)
 
@@ -129,15 +126,14 @@ def test_extract_continues_after_failure_and_retries(project_tmp, monkeypatch):
 
     calls: dict[str, int] = {}
 
-    def fake_extract(doc, provider_name, model=None):
+    def fake_extract(doc, provider_name, model=None, doi=None):
         paper_id = doc["paper_id"]
         calls[paper_id] = calls.get(paper_id, 0) + 1
         if paper_id == "paper_b":
             raise ValueError("validation failed")
-        return {"paper_id": paper_id, "title": paper_id}
+        return PaperExtraction(paper_id=paper_id, title=paper_id)
 
     monkeypatch.setattr("litgraph.cli.helpers.extract_paper", fake_extract)
-    monkeypatch.setattr("litgraph.cli.helpers.save_extraction", lambda path, extraction: None)
 
     result = extract_papers(ctx, skip_confirm=True)
 

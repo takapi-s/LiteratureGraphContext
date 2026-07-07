@@ -56,7 +56,7 @@ def test_build_and_query(project_tmp):
     write_fixtures(project_tmp / ".litgraph" / "cache" / "extracted")
     ctx = resolve_context(project_tmp)
     result = build_graph(ctx, FIXTURES)
-    assert result["papers_indexed"] == 3
+    assert result["papers_indexed"] == len(FIXTURES)
 
     finder = PaperFinder(ctx.db_path)
     gnn = finder.find_papers_by_method("GNN")

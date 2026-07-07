@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from litgraph.utils.ids import paper_id_from_path
 
@@ -22,9 +22,9 @@ def paper_id_from_md_path(path: Path) -> str:
     return paper_id_from_path(Path(_strip_note_suffix(path.stem)))
 
 
-def parse_md(path: Path) -> Dict[str, Any]:
+def parse_md(path: Path, paper_id: Optional[str] = None) -> Dict[str, Any]:
     text = path.read_text(encoding="utf-8")
-    paper_id = paper_id_from_md_path(path)
+    pid = paper_id or paper_id_from_md_path(path)
     headings: List[Tuple[int, str, int]] = []
     for match in HEADING_RE.finditer(text):
         headings.append((match.start(), match.group(2).strip(), len(match.group(1))))
@@ -59,7 +59,7 @@ def parse_md(path: Path) -> Dict[str, Any]:
         title = sections[0]["name"]
 
     return {
-        "paper_id": paper_id,
+        "paper_id": pid,
         "path": str(path),
         "source_type": "md",
         "title": title,

@@ -160,12 +160,34 @@ def init_project(project_root: Path, papers_dir: Optional[str] = None) -> Path:
         with open(aliases_path, "w", encoding="utf-8") as f:
             yaml.safe_dump({
                 "methods": {
-                    "Graph Neural Network": ["GNN", "graph neural networks"],
+                    "Graph Neural Network": ["GNN", "graph neural networks", "graph neural network"],
+                    "Graph Attention Network": ["GAT", "graph attention", "graph attention network"],
+                    "Graph Convolutional Network": [
+                        "GCN",
+                        "graph convolutional network",
+                        "graph convolution",
+                    ],
                 },
                 "datasets": {
                     "GPS trajectory": ["GPS trajectories", "trajectory data"],
                 },
-                "tasks": {},
+                "tasks": {
+                    "Traffic prediction": [
+                        "traffic forecasting",
+                        "traffic prediction",
+                        "交通予測",
+                    ],
+                    "Consumption prediction": [
+                        "consumption forecasting",
+                        "consumption prediction",
+                        "消費予測",
+                    ],
+                    "Mobility prediction": [
+                        "mobility forecasting",
+                        "mobility prediction",
+                        "人流予測",
+                    ],
+                },
             }, f)
 
     return litgraph_dir

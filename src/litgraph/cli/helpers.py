@@ -14,15 +14,19 @@ from rich.table import Table
 
 from litgraph.cli.config_manager import ResolvedContext, get_config_value, resolve_context, save_papers_dir
 from litgraph.core.jobs import JobManager, JobStatus
-from litgraph.extractor.llm_extractor import extract_paper, save_extraction
+from litgraph.extractor.llm_extractor import extract_paper
 from litgraph.extractor.providers import get_provider
 from litgraph.graph.graph_builder import build_graph, _neo4j_config
 from litgraph.graph.db_factory import get_graph_store
 from litgraph.parser.dispatcher import collect_parse_targets, parse_file
 from litgraph.query.paper_finder import PaperFinder
+from litgraph.parser.bib_linker import link_bib_to_paper
+from litgraph.parser.bib_parser import load_all_bib_entries
 from litgraph.scanner.file_scanner import discover_papers
-from litgraph.scanner.hash_cache import find_removed_files, remove_from_cache, scan_and_update
+from litgraph.scanner.hash_cache import find_removed_files, load_cache, remove_from_cache, scan_and_update
+from litgraph.utils.paper_registry import assign_paper_id, get_paper_id_for_path, load_registry, save_registry
 from litgraph.utils.ids import paper_id_from_path
+from litgraph.utils.paper_identity import load_paper_id_map, resolve_canonical_paper_id
 
 console = Console()
 _job_manager = JobManager()
@@ -65,6 +69,11 @@ def scan_papers(
         save_papers_dir(ctx, target)
     files = discover_papers(target)
     cache, changed = scan_and_update(files, ctx.files_cache_path, ctx.project_root)
+    for file_path in files:
+        if file_path.suffix.lower() in (".pdf", ".md"):
+            rel = _rel_path(ctx, file_path)
+            sha = (cache.get(rel) or {}).get("sha256", "")
+            assign_paper_id(ctx.litgraph_dir, rel, sha)
     return {
         "total": len(files),
         "changed": len(changed),
@@ -79,12 +88,22 @@ def parse_papers(ctx: ResolvedContext, only_changed: bool = True, *, verbose: bo
     files = discover_papers(target)
     _, changed = scan_and_update(files, ctx.files_cache_path, ctx.project_root)
     to_parse = collect_parse_targets(files, only_changed, changed)
+    file_cache = load_cache(ctx.files_cache_path)
 
     parsed_ids: List[str] = []
     bib_files = 0
     parse_details: List[Dict[str, Any]] = []
     for file_path in to_parse:
-        kind, paper_id = parse_file(file_path, ctx.bib_cache_dir, ctx.parsed_cache_dir)
+        rel = _rel_path(ctx, file_path)
+        sha = (file_cache.get(rel) or {}).get("sha256", "")
+        kind, paper_id = parse_file(
+            file_path,
+            ctx.bib_cache_dir,
+            ctx.parsed_cache_dir,
+            litgraph_dir=ctx.litgraph_dir,
+            project_root=ctx.project_root,
+            content_hash=sha,
+        )
         if kind in ("pdf", "md") and paper_id:
             parsed_ids.append(paper_id)
             if verbose and kind == "pdf":
@@ -172,21 +191,32 @@ def _run_extractions(
     total = len(parsed_docs)
 
     def _extract_one(doc: Dict[str, Any], index: int) -> None:
-        paper_id = str(doc.get("paper_id", ""))
+        parse_paper_id = str(doc.get("paper_id", ""))
         if job_id:
             _job_manager.update_job(
                 job_id,
-                current_item=paper_id,
+                current_item=parse_paper_id,
                 processed_items=index - 1,
-                message=f"Extracting {paper_id}",
+                message=f"Extracting {parse_paper_id}",
             )
+
+        bib_entries = load_all_bib_entries(ctx.bib_cache_dir)
+        bib_match = link_bib_to_paper(
+            parse_paper_id,
+            doc.get("path"),
+            doc.get("title"),
+            bib_entries,
+        )
+        bib_doi = bib_match.get("doi") if bib_match else None
 
         last_error: Optional[Exception] = None
         for attempt in range(1, EXTRACTION_MAX_RETRIES + 1):
             try:
-                extraction = extract_paper(doc, provider_name, model=model_name)
-                out = ctx.extracted_cache_dir / f"{paper_id}.json"
-                save_extraction(out, extraction)
+                extraction = extract_paper(doc, provider_name, model=model_name, doi=bib_doi)
+                data = extraction.model_dump()
+                paper_id = str(data["paper_id"])
+                out_path = ctx.extracted_cache_dir / f"{paper_id}.json"
+                out_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
                 extracted_ids.append(paper_id)
                 if job_id:
                     _job_manager.update_job(job_id, processed_items=index)
@@ -195,13 +225,13 @@ def _run_extractions(
                 last_error = exc
                 if attempt < EXTRACTION_MAX_RETRIES:
                     console.print(
-                        f"[yellow]Extraction failed for {paper_id} "
+                        f"[yellow]Extraction failed for {parse_paper_id} "
                         f"(attempt {attempt}/{EXTRACTION_MAX_RETRIES}): {exc}[/yellow]"
                     )
 
-        failed.append({"paper_id": paper_id, "error": str(last_error)})
+        failed.append({"paper_id": parse_paper_id, "error": str(last_error)})
         console.print(
-            f"[red]Failed to extract {paper_id} after {EXTRACTION_MAX_RETRIES} attempts: "
+            f"[red]Failed to extract {parse_paper_id} after {EXTRACTION_MAX_RETRIES} attempts: "
             f"{last_error}[/red]"
         )
 
@@ -349,14 +379,29 @@ def extract_paper_ids(
 
 
 def remove_paper_artifacts(ctx: ResolvedContext, file_path: Path, paper_id: Optional[str] = None) -> str:
-    pid = paper_id or paper_id_from_path(file_path)
+    rel = _rel_path(ctx, file_path)
+    pid = paper_id or get_paper_id_for_path(ctx.litgraph_dir, rel) or paper_id_from_path(file_path)
+    pid = resolve_canonical_paper_id(ctx.litgraph_dir, pid)
     for cache_file in (
         ctx.parsed_cache_dir / f"{pid}.json",
         ctx.extracted_cache_dir / f"{pid}.json",
     ):
         if cache_file.exists():
             cache_file.unlink()
-    remove_from_cache(ctx.files_cache_path, _rel_path(ctx, file_path))
+    mapping = load_paper_id_map(ctx.litgraph_dir)
+    for parse_id, canonical_id in mapping.items():
+        if canonical_id == pid or parse_id == pid:
+            for cache_file in (
+                ctx.parsed_cache_dir / f"{parse_id}.json",
+                ctx.extracted_cache_dir / f"{parse_id}.json",
+            ):
+                if cache_file.exists():
+                    cache_file.unlink()
+    registry = load_registry(ctx.litgraph_dir)
+    if rel in registry:
+        del registry[rel]
+        save_registry(ctx.litgraph_dir, registry)
+    remove_from_cache(ctx.files_cache_path, rel)
     return pid
 
 
@@ -401,10 +446,20 @@ def process_watch_changes(
 
     parsed_ids: List[str] = []
     bib_changed = delete_info["bib_files_removed"] > 0
+    file_cache = load_cache(ctx.files_cache_path)
     for path in changed_paths:
         if not path.exists():
             continue
-        kind, paper_id = parse_file(path, ctx.bib_cache_dir, ctx.parsed_cache_dir)
+        rel = _rel_path(ctx, path)
+        sha = (file_cache.get(rel) or {}).get("sha256", "")
+        kind, paper_id = parse_file(
+            path,
+            ctx.bib_cache_dir,
+            ctx.parsed_cache_dir,
+            litgraph_dir=ctx.litgraph_dir,
+            project_root=ctx.project_root,
+            content_hash=sha,
+        )
         if kind == "bib":
             bib_changed = True
         elif kind in ("pdf", "md") and paper_id:
@@ -570,33 +625,40 @@ def run_query(
     include_summary: bool = False,
 ) -> Dict[str, Any]:
     finder = _finder(ctx)
-    try:
-        if query_type == "papers":
-            if method:
-                return {"papers": finder.find_papers_by_method(method)}
-            if task:
-                return {"papers": finder.find_papers_by_task(task)}
-            return {"papers": finder.list_papers()}
-        if query_type == "limitations":
-            return finder.find_limitations(topic or "")
-        if query_type == "paper":
-            return finder.summarize_paper(paper_id or "")
-        if query_type == "claim":
-            return finder.get_evidence_for_claim(claim_id or "")
-        if query_type == "compare":
-            return finder.compare_papers(paper_ids or [])
-        if query_type == "matrix":
-            return finder.build_literature_matrix(topic or "")
-        if query_type == "neighbors":
-            return finder.get_paper_neighbors(
-                paper_id or "",
-                include_summary=include_summary,
-            )
-        if query_type == "outline":
-            return finder.related_work_outline(topic or "")
-        return {"error": f"Unknown query type: {query_type}"}
-    finally:
-        finder.close()
+    if query_type == "papers":
+        if method:
+            return {"papers": finder.find_papers_by_method(method)}
+        if task:
+            return {"papers": finder.find_papers_by_task(task)}
+        return {"papers": finder.list_papers()}
+    if query_type == "limitations":
+        return finder.find_limitations(topic=topic or "", paper_id=paper_id)
+    if query_type == "paper":
+        return finder.summarize_paper(paper_id or "")
+    if query_type == "claim":
+        return finder.get_evidence_for_claim(claim_id or "")
+    if query_type == "compare":
+        return finder.compare_papers(paper_ids or [])
+    if query_type == "matrix":
+        return finder.build_literature_matrix(topic or "")
+    if query_type == "neighbors":
+        return finder.get_paper_neighbors(
+            paper_id or "",
+            include_summary=include_summary,
+        )
+    if query_type == "search":
+        return finder.search_papers(
+            topic or "",
+            top_k=10,
+        )
+    if query_type == "expand":
+        return finder.expand_paper_graph(
+            paper_id or "",
+            hops=2,
+        )
+    if query_type == "outline":
+        return finder.related_work_outline(topic or "")
+    return {"error": f"Unknown query type: {query_type}"}
 
 
 def launch_visualizer(ctx: ResolvedContext, port: int = 8765, open_browser: bool = True) -> None:

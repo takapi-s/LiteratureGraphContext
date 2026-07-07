@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import threading
 import time
@@ -65,10 +66,14 @@ def test_process_watch_parse_without_extract(project_tmp):
     )
 
     assert result["parsed"] == 1
-    assert result["paper_ids"] == ["new_paper"]
-    assert result["pending_extract"] == ["new_paper"]
-    assert (ctx.parsed_cache_dir / "new_paper.json").exists()
-    assert not (ctx.extracted_cache_dir / "new_paper.json").exists()
+    assert len(result["paper_ids"]) == 1
+    paper_id = result["paper_ids"][0]
+    assert paper_id.startswith("p_")
+    assert result["pending_extract"] == [paper_id]
+    assert (ctx.parsed_cache_dir / f"{paper_id}.json").exists()
+    parsed = json.loads((ctx.parsed_cache_dir / f"{paper_id}.json").read_text(encoding="utf-8"))
+    assert parsed["source_stem"] == "new_paper"
+    assert not (ctx.extracted_cache_dir / f"{paper_id}.json").exists()
 
 
 def test_process_watch_delete_paper(project_tmp):
@@ -159,12 +164,13 @@ def test_process_watch_auto_extract_skips_confirm(project_tmp, monkeypatch):
         confirm_calls.append(skip)
         return True
 
-    def fake_extract(doc, provider_name, model=None):
-        return {"paper_id": doc["paper_id"], "title": doc["paper_id"]}
+    def fake_extract(doc, provider_name, model=None, doi=None):
+        from litgraph.extractor.schema import PaperExtraction
+
+        return PaperExtraction(paper_id=doc["paper_id"], title=doc["paper_id"])
 
     monkeypatch.setattr("litgraph.cli.helpers._confirm_external_api", fake_confirm)
     monkeypatch.setattr("litgraph.cli.helpers.extract_paper", fake_extract)
-    monkeypatch.setattr("litgraph.cli.helpers.save_extraction", lambda path, extraction: None)
 
     result = process_watch_changes(
         ctx,
@@ -189,7 +195,11 @@ def test_sync_on_start_detects_new_file(project_tmp):
     result = sync_papers_directory(ctx, auto_extract=False, auto_build=False)
 
     assert result["parsed"] == 1
-    assert result["paper_ids"] == ["sync_test"]
+    assert len(result["paper_ids"]) == 1
+    paper_id = result["paper_ids"][0]
+    assert paper_id.startswith("p_")
+    parsed = json.loads((ctx.parsed_cache_dir / f"{paper_id}.json").read_text(encoding="utf-8"))
+    assert parsed["source_stem"] == "sync_test"
 
 
 def test_delete_paper_kuzu_store(project_tmp):
