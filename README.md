@@ -4,6 +4,37 @@ Structure paper PDFs into a knowledge graph (Paper, Method, Dataset, Claim, Limi
 
 Licensed under the [MIT License](LICENSE).
 
+## Design philosophy
+
+LiteratureGraphContext is a **structured evidence layer** for literature review—not an AI that writes your related work or discovers research gaps for you.
+
+**What LGC owns**
+
+- **Graph connections** — Papers link through shared tasks, methods, datasets, citations (`CITES`), contrasts (`CONTRASTS_WITH`), and extensions (`EXTENDS`). Multiple studies stay connected across topics instead of living in isolated PDFs.
+- **Evidence-backed facts** — Claims, limitations, and contributions are stored with provenance: `paper_id`, page, section, and `evidence_text`.
+- **MCP as the data plane** — Tools return structured lists, comparisons, and matrices grounded in the graph.
+
+**What the connected agent owns**
+
+- Interpreting limitations as research gaps
+- Drafting related work prose
+- Open-ended synthesis and recommendations
+
+A typical agent flow:
+
+```text
+User: "What are the gaps in prediction research?"
+
+  Agent → find_papers_by_task("prediction")
+        → find_limitations("prediction")   # conclusions & limits, with evidence
+        → get_paper_neighbors(paper_id)    # CITES / CONTRASTS_WITH / EXTENDS
+        → compare_papers([...])            # methods, datasets, contrasts
+
+  Agent synthesizes the answer, citing paper_id / page / evidence_text from MCP
+```
+
+LGC does not pre-compute narrative conclusions. It makes the graph and evidence reliable enough for agents to reason over. See [ROADMAP.md](ROADMAP.md) for how known limitations are prioritized under this model.
+
 ## Quick start
 
 ```bash
