@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import shutil
+import threading
+import time
 from pathlib import Path
 
 from litgraph.cli.config_manager import resolve_context, save_papers_dir
 from litgraph.cli.helpers import process_watch_changes, sync_papers_directory
+from litgraph.core.watcher import PapersEventHandler, WatchOptions
 from litgraph.graph.graph_builder import build_graph
 from litgraph.query.paper_finder import PaperFinder
 from litgraph.scanner.hash_cache import load_cache, scan_and_update
@@ -96,6 +99,84 @@ def test_process_watch_delete_paper(project_tmp):
     finder2 = PaperFinder(ctx.db_path)
     assert finder2.get_paper("mobility_gnn_2024") is None
     finder2.store.close()
+
+
+def test_watch_queues_changes_until_processing_finishes(project_tmp, monkeypatch):
+    ctx = resolve_context(project_tmp)
+    papers = _use_papers_dir(ctx, project_tmp)
+    ignore_spec, _ = build_ignore_spec(papers)
+    handler = PapersEventHandler(ctx, WatchOptions(), papers, ignore_spec)
+
+    batches: list[list[str]] = []
+    first_batch_started = threading.Event()
+    release_first_batch = threading.Event()
+
+    def slow_process(_ctx, changed_paths, deleted_paths, **kwargs):
+        batches.append([path.name for path in changed_paths])
+        if len(batches) == 1:
+            first_batch_started.set()
+            assert release_first_batch.wait(timeout=5)
+        return {
+            "parsed": len(changed_paths),
+            "paper_ids": [],
+            "extracted": 0,
+            "extract_skipped": 0,
+            "pending_extract": [],
+            "bib_updated": False,
+            "removed_paper_ids": [],
+            "papers_indexed": 0,
+        }
+
+    monkeypatch.setattr("litgraph.cli.helpers.process_watch_changes", slow_process)
+    handler.start_worker()
+
+    file_a = papers / "queued_a.md"
+    file_b = papers / "queued_b.md"
+    handler._queue(file_a.resolve(), deleted=False)
+    assert first_batch_started.wait(timeout=5)
+
+    handler._queue(file_b.resolve(), deleted=False)
+    release_first_batch.set()
+
+    deadline = time.time() + 5
+    while len(batches) < 2 and time.time() < deadline:
+        time.sleep(0.05)
+
+    handler.stop_worker()
+    assert batches[0] == ["queued_a.md"]
+    assert batches[1] == ["queued_b.md"]
+
+
+def test_process_watch_auto_extract_skips_confirm(project_tmp, monkeypatch):
+    ctx = resolve_context(project_tmp)
+    papers = _use_papers_dir(ctx, project_tmp)
+    md = papers / "new_paper.md"
+    shutil.copy(FIXTURES_DIR / "sample_note.md", md)
+
+    confirm_calls: list[bool] = []
+
+    def fake_confirm(_ctx, _provider, _sections, skip):
+        confirm_calls.append(skip)
+        return True
+
+    def fake_extract(doc, provider_name, model=None):
+        return {"paper_id": doc["paper_id"], "title": doc["paper_id"]}
+
+    monkeypatch.setattr("litgraph.cli.helpers._confirm_external_api", fake_confirm)
+    monkeypatch.setattr("litgraph.cli.helpers.extract_paper", fake_extract)
+    monkeypatch.setattr("litgraph.cli.helpers.save_extraction", lambda path, extraction: None)
+
+    result = process_watch_changes(
+        ctx,
+        changed_paths=[md.resolve()],
+        deleted_paths=[],
+        auto_extract=True,
+        auto_build=False,
+        skip_confirm=False,
+    )
+
+    assert result["extracted"] == 1
+    assert confirm_calls == [True]
 
 
 def test_sync_on_start_detects_new_file(project_tmp):

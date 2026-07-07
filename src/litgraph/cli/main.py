@@ -138,30 +138,44 @@ def watch_cmd(
         help="Run LLM extraction on new/changed papers (off by default)",
     ),
     no_build: bool = typer.Option(False, "--no-build", help="Skip graph rebuild after changes"),
-    debounce: float = typer.Option(2.0, "--debounce", help="Debounce interval in seconds"),
     sync_on_start: bool = typer.Option(False, "--sync-on-start", help="Process pending changes before watching"),
     polling: bool = typer.Option(False, "--polling", help="Use polling observer (or set LITGRAPH_WATCH_POLLING=1)"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip external API confirmation for auto-extract"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip external API confirmation (automatic with --auto-extract)",
+    ),
     provider: Optional[str] = typer.Option(None, "--provider", help="LLM provider for --auto-extract"),
     model: Optional[str] = typer.Option(None, "--model", help="LLM model for --auto-extract"),
     enrich_s2: bool = typer.Option(False, "--enrich-s2", help="Enrich metadata via Semantic Scholar on rebuild"),
 ) -> None:
-    """Watch papers directory; default pipeline is scan → parse → build (no LLM)."""
+    """Watch papers directory; queues changes while a batch is processing."""
     ctx = config_manager.resolve_context()
 
     def _on_result(result: dict) -> None:
         parsed = result.get("parsed", 0)
         removed = result.get("removed_paper_ids", [])
         pending = result.get("pending_extract", [])
+        extracted = result.get("extracted", 0)
+        extract_skipped = result.get("extract_skipped", 0)
         if parsed:
             console.print(f"[green]Parsed {parsed} paper(s).[/green]")
+        if extracted:
+            if extract_skipped:
+                console.print(
+                    f"[green]Extracted {extracted} paper(s), "
+                    f"skipped {extract_skipped} already up to date.[/green]"
+                )
+            else:
+                console.print(f"[green]Extracted {extracted} paper(s).[/green]")
         if removed:
             console.print(f"[yellow]Removed {len(removed)} paper(s) from graph.[/yellow]")
         if result.get("bib_updated"):
             console.print("[green]Bib metadata updated.[/green]")
         if result.get("papers_indexed") is not None and result.get("papers_indexed", 0) > 0:
             console.print(f"[green]Graph rebuilt: {result['papers_indexed']} paper(s) indexed.[/green]")
-        if pending:
+        if pending and not auto_extract:
             console.print(
                 f"[yellow]{len(pending)} paper(s) parsed but not in graph "
                 f"(run litgraph extract): {', '.join(pending)}[/yellow]"
@@ -169,18 +183,19 @@ def watch_cmd(
         if result.get("cancelled"):
             console.print("[yellow]Auto-extract cancelled.[/yellow]")
 
+    auto_yes = yes or auto_extract
     console.print(
         f"Watching {ctx.papers_dir} "
-        f"(auto_extract={'on' if auto_extract else 'off'}, build={'on' if not no_build else 'off'}). "
+        f"(auto_extract={'on' if auto_extract else 'off'}, build={'on' if not no_build else 'off'}"
+        f"{', auto-yes' if auto_yes and auto_extract else ''}). "
         "Press Ctrl+C to stop."
     )
     helpers.run_papers_watcher(
         ctx,
         auto_extract=auto_extract,
         auto_build=not no_build,
-        debounce=debounce,
         sync_on_start=sync_on_start,
-        skip_confirm=yes,
+        skip_confirm=auto_yes,
         provider=provider,
         model=model,
         enrich_s2=enrich_s2,

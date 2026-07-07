@@ -31,7 +31,6 @@ def should_use_polling_observer(use_polling: Optional[bool] = None) -> bool:
 class WatchOptions:
     auto_extract: bool = False
     auto_build: bool = True
-    debounce_interval: float = 2.0
     sync_on_start: bool = False
     skip_confirm: bool = False
     provider: Optional[str] = None
@@ -53,10 +52,12 @@ class PapersEventHandler(FileSystemEventHandler):
         self.options = options
         self.watch_root = watch_root.resolve()
         self.ignore_spec = ignore_spec
-        self._timers: dict[str, threading.Timer] = {}
         self._lock = threading.Lock()
+        self._wake = threading.Condition(self._lock)
         self._pending_changed: Set[Path] = set()
         self._pending_deleted: Set[Path] = set()
+        self._worker: Optional[threading.Thread] = None
+        self._shutdown = False
 
     def _is_supported(self, path: str | Path) -> bool:
         path_obj = Path(path)
@@ -70,53 +71,68 @@ class PapersEventHandler(FileSystemEventHandler):
 
     def _queue(self, path: str | Path, deleted: bool) -> None:
         resolved = Path(path).resolve()
-        with self._lock:
+        with self._wake:
             if deleted:
                 self._pending_deleted.add(resolved)
                 self._pending_changed.discard(resolved)
             else:
                 if resolved not in self._pending_deleted:
                     self._pending_changed.add(resolved)
-        self._debounce_flush()
+            self._wake.notify()
 
-    def _debounce_flush(self) -> None:
-        key = "__batch__"
-        if key in self._timers:
-            self._timers[key].cancel()
-        timer = threading.Timer(self.options.debounce_interval, self._flush)
-        timer.start()
-        self._timers[key] = timer
+    def start_worker(self) -> None:
+        with self._wake:
+            if self._worker and self._worker.is_alive():
+                return
+            self._shutdown = False
+            self._worker = threading.Thread(
+                target=self._worker_loop,
+                daemon=True,
+                name="litgraph-watch-worker",
+            )
+            self._worker.start()
 
-    def _flush(self) -> None:
+    def _worker_loop(self) -> None:
         from litgraph.cli.helpers import process_watch_changes
 
-        with self._lock:
-            changed = sorted(self._pending_changed)
-            deleted = sorted(self._pending_deleted)
-            self._pending_changed.clear()
-            self._pending_deleted.clear()
+        while True:
+            with self._wake:
+                while (
+                    not self._shutdown
+                    and not self._pending_changed
+                    and not self._pending_deleted
+                ):
+                    self._wake.wait()
+                if self._shutdown:
+                    return
+                changed = sorted(self._pending_changed)
+                deleted = sorted(self._pending_deleted)
+                self._pending_changed.clear()
+                self._pending_deleted.clear()
 
-        if not changed and not deleted:
-            return
+            if not changed and not deleted:
+                continue
 
-        result = process_watch_changes(
-            self.ctx,
-            changed_paths=changed,
-            deleted_paths=deleted,
-            auto_extract=self.options.auto_extract,
-            auto_build=self.options.auto_build,
-            skip_confirm=self.options.skip_confirm,
-            provider=self.options.provider,
-            model=self.options.model,
-            enrich_s2=self.options.enrich_s2,
-        )
-        if self.options.on_result:
-            self.options.on_result(result)
+            result = process_watch_changes(
+                self.ctx,
+                changed_paths=changed,
+                deleted_paths=deleted,
+                auto_extract=self.options.auto_extract,
+                auto_build=self.options.auto_build,
+                skip_confirm=self.options.skip_confirm,
+                provider=self.options.provider,
+                model=self.options.model,
+                enrich_s2=self.options.enrich_s2,
+            )
+            if self.options.on_result:
+                self.options.on_result(result)
 
-    def cancel_timers(self) -> None:
-        for timer in self._timers.values():
-            timer.cancel()
-        self._timers.clear()
+    def stop_worker(self) -> None:
+        with self._wake:
+            self._shutdown = True
+            self._wake.notify_all()
+        if self._worker and self._worker.is_alive():
+            self._worker.join(timeout=5)
 
     def on_created(self, event) -> None:
         if not event.is_directory and self._should_process(event.src_path):
@@ -176,6 +192,7 @@ class PapersWatcher:
             if self.options.on_result:
                 self.options.on_result(result)
 
+        self.handler.start_worker()
         self.observer.schedule(self.handler, str(self.watch_root), recursive=True)
         self.observer.start()
 
@@ -189,7 +206,7 @@ class PapersWatcher:
             self.stop()
 
     def stop(self) -> None:
-        self.handler.cancel_timers()
+        self.handler.stop_worker()
         if self.observer.is_alive():
             self.observer.stop()
             self.observer.join(timeout=5)

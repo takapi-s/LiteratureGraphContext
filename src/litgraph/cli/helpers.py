@@ -352,18 +352,18 @@ def process_watch_changes(
     files = discover_papers(ctx.papers_dir)
     scan_and_update(files, ctx.files_cache_path, ctx.project_root)
 
-    pending_extract = [
-        pid for pid in parsed_ids
-        if not (ctx.extracted_cache_dir / f"{pid}.json").exists()
-    ]
+    pending_extract = [pid for pid in parsed_ids if _needs_extraction(ctx, pid)]
     extracted = 0
-    if auto_extract and parsed_ids:
+    extract_skipped = 0
+    effective_skip_confirm = skip_confirm or auto_extract
+    if auto_extract and pending_extract:
         extract_result = extract_paper_ids(
             ctx,
-            parsed_ids,
-            skip_confirm=skip_confirm,
+            pending_extract,
+            skip_confirm=effective_skip_confirm,
             provider=provider,
             model=model,
+            show_progress=True,
         )
         if extract_result.get("cancelled"):
             return {
@@ -374,10 +374,8 @@ def process_watch_changes(
                 "cancelled": True,
             }
         extracted = extract_result.get("extracted", 0)
-        pending_extract = [
-            pid for pid in parsed_ids
-            if not (ctx.extracted_cache_dir / f"{pid}.json").exists()
-        ]
+        extract_skipped = extract_result.get("skipped", 0)
+        pending_extract = [pid for pid in parsed_ids if _needs_extraction(ctx, pid)]
 
     build_result: Dict[str, Any] = {}
     if auto_build and (bib_changed or parsed_ids or deleted_paths):
@@ -387,6 +385,7 @@ def process_watch_changes(
         "parsed": len(parsed_ids),
         "paper_ids": parsed_ids,
         "extracted": extracted,
+        "extract_skipped": extract_skipped,
         "pending_extract": pending_extract,
         "bib_updated": bib_changed,
         "removed_paper_ids": delete_info["removed_paper_ids"],
@@ -424,7 +423,6 @@ def run_papers_watcher(
     ctx: ResolvedContext,
     auto_extract: bool = False,
     auto_build: bool = True,
-    debounce: float = 2.0,
     sync_on_start: bool = False,
     skip_confirm: bool = False,
     provider: Optional[str] = None,
@@ -438,7 +436,6 @@ def run_papers_watcher(
     options = WatchOptions(
         auto_extract=auto_extract,
         auto_build=auto_build,
-        debounce_interval=debounce,
         sync_on_start=sync_on_start,
         skip_confirm=skip_confirm,
         provider=provider,
