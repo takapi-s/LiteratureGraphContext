@@ -87,9 +87,9 @@ def load_env() -> None:
     load_dotenv(override=True)
 
 
-def find_project_litgraph_dir(cwd: Optional[Path] = None) -> Path:
-    cwd = cwd or Path.cwd()
-    current = cwd.resolve()
+def _walk_up_litgraph_dir(start: Path) -> Path:
+    """Return ``.litgraph`` directory by walking up from ``start`` (no env load)."""
+    current = start.resolve()
     for _ in range(10):
         candidate = current / PROJECT_DIR_NAME
         if candidate.is_dir():
@@ -97,12 +97,39 @@ def find_project_litgraph_dir(cwd: Optional[Path] = None) -> Path:
         if current.parent == current:
             break
         current = current.parent
-    return cwd.resolve() / PROJECT_DIR_NAME
+    return start.resolve() / PROJECT_DIR_NAME
+
+
+def find_project_litgraph_dir(cwd: Optional[Path] = None) -> Path:
+    start = cwd if cwd is not None else Path.cwd()
+    return _walk_up_litgraph_dir(start)
+
+
+def resolve_project_root(cwd: Optional[Path] = None) -> Path:
+    """Resolve the LGC project root for CLI and MCP.
+
+    Priority:
+    1. Explicit ``cwd`` argument (tests, programmatic callers)
+    2. ``LITGRAPH_PROJECT_ROOT`` environment variable (MCP / IDE config)
+    3. Walk up from the process cwd to find an existing ``.litgraph`` directory
+    4. Current working directory
+    """
+    load_env()
+    if cwd is not None:
+        return cwd.resolve()
+
+    env_root = os.getenv("LITGRAPH_PROJECT_ROOT", "").strip()
+    if env_root:
+        return Path(env_root).expanduser().resolve()
+
+    litgraph_dir = find_project_litgraph_dir()
+    if litgraph_dir.is_dir():
+        return litgraph_dir.parent
+    return Path.cwd().resolve()
 
 
 def resolve_context(cwd: Optional[Path] = None, init: bool = False) -> ResolvedContext:
-    cwd = cwd or Path.cwd()
-    project_root = cwd.resolve()
+    project_root = resolve_project_root(cwd)
     litgraph_dir = project_root / PROJECT_DIR_NAME
 
     if init or not litgraph_dir.exists():
