@@ -350,6 +350,29 @@ def query_neighbors(
     helpers.print_query_result(result)
 
 
+@query_app.command("search")
+def query_search(
+    query: str = typer.Option(..., "--query"),
+    top_k: int = typer.Option(10, "--top-k"),
+) -> None:
+    """Search papers by natural-language query."""
+    ctx = config_manager.resolve_context()
+    result = helpers.run_query(ctx, "search", topic=query)
+    helpers.print_query_result(result)
+
+
+@query_app.command("expand")
+def query_expand(
+    paper_id: str = typer.Option(..., "--paper-id"),
+    hops: int = typer.Option(2, "--hops"),
+) -> None:
+    """Expand the literature graph from a seed paper."""
+    ctx = config_manager.resolve_context()
+    finder = helpers._finder(ctx)
+    result = finder.expand_paper_graph(paper_id, hops=hops)
+    helpers.print_query_result(result)
+
+
 @query_app.command("outline")
 def query_outline(
     topic: str = typer.Option(..., "--topic"),
@@ -358,6 +381,19 @@ def query_outline(
     ctx = config_manager.resolve_context()
     result = helpers.run_query(ctx, "outline", topic=topic)
     helpers.print_query_result(result)
+
+
+@app.command("test-mcp")
+def test_mcp_cmd(
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project root"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Print failed payloads"),
+) -> None:
+    """Smoke-test all MCP tools against the project graph."""
+    from litgraph.mcp.test_runner import run_mcp_smoke_tests
+
+    result = run_mcp_smoke_tests(path.resolve(), verbose=verbose)
+    if result["failed"]:
+        raise typer.Exit(code=1)
 
 
 @app.command("serve-mcp")
