@@ -18,6 +18,7 @@ import { downloadBlob } from "../lib/utils";
 import { exportSvg } from "../lib/svg-exporter";
 import { packageInteractiveExport } from "../lib/html-exporter";
 import { toast } from "sonner";
+import { PaperCardList } from "./PaperCardList";
 
 const PALETTE = {
   dark: {
@@ -913,6 +914,7 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
   };
 
   const fileTree = useMemo(() => buildTree(data.files || []), [data.files]);
+  const paperSummaries = useMemo(() => data.papers || [], [data.papers]);
 
   const city3dData = useMemo(() => {
     if (graphMode !== 'city3d') return filteredData;
@@ -1356,6 +1358,14 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
                       </div>
                     </div>
                   </motion.div>
+                ) : paperSummaries.length > 0 ? (
+                  <PaperCardList
+                    papers={paperSummaries}
+                    selectedFile={selectedFile}
+                    onPaperClick={(paperId) => onFileClick(`papers/${paperId}`)}
+                    searchQuery={searchQuery}
+                    isDark={isDark}
+                  />
                 ) : (
                   <div className="py-1">
                     {fileTree.map(node => (
