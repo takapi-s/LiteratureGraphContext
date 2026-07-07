@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -37,8 +38,22 @@ class KuzuGraphStore(GraphQueryInterface):
         self._conn: Optional[kuzu.Connection] = None
 
     def _connect(self) -> kuzu.Connection:
-        if self._conn is None:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if self._conn is not None:
+            return self._conn
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._db = kuzu.Database(str(self.db_path))
+            self._conn = kuzu.Connection(self._db)
+        except RuntimeError as exc:
+            if "Could not set lock" not in str(exc):
+                raise
+            from litgraph.utils.db_lock import release_db_lock
+
+            stopped = release_db_lock(self.db_path)
+            if not stopped:
+                raise
+            names = ", ".join(f"{proc.command}(pid={proc.pid})" for proc in stopped)
+            print(f"Released Kuzu lock by stopping: {names}", file=sys.stderr)
             self._db = kuzu.Database(str(self.db_path))
             self._conn = kuzu.Connection(self._db)
         return self._conn

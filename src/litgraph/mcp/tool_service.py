@@ -64,6 +64,8 @@ class MCPToolService:
             return {"error": f"Unknown tool: {name}"}
         except Exception as exc:
             return {"error": str(exc)}
+        finally:
+            self.finder.close()
 
     def format_tool_result(self, name: str, result: Dict[str, Any]) -> str:
         import json

@@ -22,9 +22,23 @@ class PaperFinder:
         backend: str = "kuzu",
         neo4j_config: Optional[Dict[str, Any]] = None,
     ) -> None:
-        self.store = get_graph_store(db_path, backend=backend, neo4j_config=neo4j_config)
-        self.store.initialize_schema()
+        self.db_path = db_path
+        self.backend = backend
+        self.neo4j_config = neo4j_config
         self.aliases_path = aliases_path or (db_path.parent.parent / "aliases.yaml")
+        self._store = None
+
+    @property
+    def store(self):
+        if self._store is None:
+            self._store = get_graph_store(self.db_path, backend=self.backend, neo4j_config=self.neo4j_config)
+            self._store.initialize_schema()
+        return self._store
+
+    def close(self) -> None:
+        if self._store is not None:
+            self._store.close()
+            self._store = None
 
     def list_papers(self) -> List[Dict[str, Any]]:
         return self.store.list_papers()

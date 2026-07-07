@@ -417,27 +417,30 @@ def run_query(
     min_papers: Optional[int] = None,
 ) -> Dict[str, Any]:
     finder = _finder(ctx)
-    if query_type == "papers":
-        if method:
-            return {"papers": finder.find_papers_by_method(method)}
-        if task:
-            return {"papers": finder.find_papers_by_task(task)}
-        return {"papers": finder.list_papers()}
-    if query_type == "limitations":
-        return finder.find_limitations(topic or "")
-    if query_type == "paper":
-        return finder.summarize_paper(paper_id or "")
-    if query_type == "claim":
-        return finder.get_evidence_for_claim(claim_id or "")
-    if query_type == "compare":
-        return finder.compare_papers(paper_ids or [])
-    if query_type == "matrix":
-        return finder.build_literature_matrix(topic or "")
-    if query_type == "gaps":
-        return finder.find_research_gaps(topic or "", min_papers=min_papers or 1)
-    if query_type == "outline":
-        return finder.related_work_outline(topic or "")
-    return {"error": f"Unknown query type: {query_type}"}
+    try:
+        if query_type == "papers":
+            if method:
+                return {"papers": finder.find_papers_by_method(method)}
+            if task:
+                return {"papers": finder.find_papers_by_task(task)}
+            return {"papers": finder.list_papers()}
+        if query_type == "limitations":
+            return finder.find_limitations(topic or "")
+        if query_type == "paper":
+            return finder.summarize_paper(paper_id or "")
+        if query_type == "claim":
+            return finder.get_evidence_for_claim(claim_id or "")
+        if query_type == "compare":
+            return finder.compare_papers(paper_ids or [])
+        if query_type == "matrix":
+            return finder.build_literature_matrix(topic or "")
+        if query_type == "gaps":
+            return finder.find_research_gaps(topic or "", min_papers=min_papers or 1)
+        if query_type == "outline":
+            return finder.related_work_outline(topic or "")
+        return {"error": f"Unknown query type: {query_type}"}
+    finally:
+        finder.close()
 
 
 def launch_visualizer(ctx: ResolvedContext, port: int = 8765, open_browser: bool = True) -> None:
