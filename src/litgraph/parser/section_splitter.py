@@ -125,8 +125,12 @@ def split_sections(parsed: Dict[str, Any]) -> Dict[str, Any]:
         "section_names": [s["name"] for s in sections],
     }
 
+    # Drop layout dicts before caching: PyMuPDF may embed image bytes that are not JSON-serializable.
+    cache_pages = [{"page": p["page"], "text": p.get("text", "")} for p in pages]
+
     return {
         **parsed,
+        "pages": cache_pages,
         "title": title,
         "sections": sections,
         "section_meta": section_meta,

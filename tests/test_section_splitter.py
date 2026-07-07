@@ -1,5 +1,7 @@
 """Tests for section splitting and heading detection."""
 
+import json
+
 from litgraph.parser.heading_detector import find_block_section_starts
 from litgraph.parser.reference_parser import parse_reference_entry, parse_references_section
 from litgraph.parser.section_splitter import split_sections
@@ -94,3 +96,29 @@ def test_parse_reference_entry_doi():
     ref = parse_reference_entry("Jones, C. Graph Models. 2019. https://doi.org/10.5555/test.1")
     assert ref["doi"] == "10.5555/test.1"
     assert ref["year"] == 2019
+
+
+def test_split_sections_strips_non_json_layout_dict():
+    parsed = {
+        "paper_id": "img",
+        "pages": [{
+            "page": 1,
+            "text": "Title\n\nAbstract\nBody text.",
+            "dict": {
+                "blocks": [
+                    {"type": 1, "image": b"\x89PNG\r\n\x1a\n"},
+                    {
+                        "type": 0,
+                        "lines": [{
+                            "spans": [{"text": "Abstract", "size": 14.0, "bbox": [0, 0, 0, 0]}],
+                            "bbox": [0, 0, 0, 0],
+                        }],
+                    },
+                ],
+            },
+        }],
+        "full_text": "Title\n\nAbstract\nBody text.",
+    }
+    out = split_sections(parsed)
+    assert "dict" not in out["pages"][0]
+    json.dumps(out)
