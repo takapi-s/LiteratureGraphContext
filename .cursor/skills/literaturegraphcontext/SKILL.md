@@ -23,14 +23,15 @@ LGC is a **structured evidence layer**, not an agent that writes related work or
 - **LGC owns**: graph connections (CITES, CONTRASTS_WITH, EXTENDS), evidence-backed facts (`paper_id`, page, section, `evidence_text`), and MCP tools that return structured data.
 - **The connected agent owns**: interpreting limitations as gaps, drafting prose, open-ended synthesis.
 
-Typical agent flow for “what are the gaps in X?”:
+A typical agent flow for literature questions:
 
 ```text
-find_papers_by_task("X")
-→ find_limitations("X")           # limitations with evidence
-→ get_paper_neighbors(paper_id) # CITES / CITED_BY / CONTRASTS_WITH / EXTENDS
-→ compare_papers([...])
-→ agent synthesizes, citing evidence from tool results
+search_papers("ambiguous topic")   # always first for discovery
+→ compare_papers([paper_ids])
+→ summarize_paper(paper_id)        # details from search result IDs
+→ find_limitations(topic=...) or find_limitations(paper_id=...)
+→ get_paper_neighbors(paper_id)
+→ agent synthesizes, citing paper_id / title / page / evidence_text
 ```
 
 ## Core workflow
@@ -60,13 +61,15 @@ Supported inputs under `papers_dir`: `.pdf` (full pipeline), `.md` (notes), `.bi
 | Tool | Use for |
 |---|---|
 | `list_papers` | All indexed papers |
+| `search_papers` | Natural-language entry: returns `paper_id`, title, score, match_reason |
 | `summarize_paper` | One paper by `paper_id` |
 | `find_papers_by_method` / `find_papers_by_task` | Method or task search |
-| `find_limitations` | Limitations with evidence for a topic |
+| `find_limitations` | Limitations by `topic` and/or `paper_id` (with evidence) |
 | `get_evidence_for_claim` | Evidence for a `claim_id` |
 | `compare_papers` | Side-by-side comparison |
 | `build_literature_matrix` | Topic matrix across papers |
 | `get_paper_neighbors` | Neighbors via CITES, CITED_BY, CONTRASTS_WITH, EXTENDS (`relationships`, `include_summary` optional) |
+| `expand_paper_graph` | Multi-hop BFS from a seed paper (`hops`, `relationships` optional) |
 | `generate_related_work_outline` | Section outline with supporting papers |
 | `list_jobs` / `check_job_status` | Background `extract --background` jobs |
 
@@ -79,7 +82,7 @@ Supported inputs under `papers_dir`: `.pdf` (full pipeline), `.md` (notes), `.bi
 - When answering from graph data, **cite `paper_id`, title, page, section, and `evidence_text`** when available.
 - Related work **draft prose** and **gap interpretation** are out of scope for LGC; use `generate_related_work_outline`, `find_limitations`, `get_paper_neighbors`, and `build_literature_matrix` as context for the client model.
 - `litgraph watch` defaults to scan → parse → build (no LLM); pass `--auto-extract` for full pipeline on file changes (confirmation auto-skipped). Changes queue while a batch is processing.
-- Optional: `litgraph viz` for local graph UI; `litgraph import zotero-sync` for Zotero Web API bib cache.
+- Optional: `litgraph viz` for local graph UI; `litgraph test-mcp` to smoke-test all MCP tools; `litgraph import zotero-sync` for Zotero Web API bib cache.
 
 ## References in this repo
 

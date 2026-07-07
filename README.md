@@ -25,10 +25,10 @@ A typical agent flow:
 ```text
 User: "What are the gaps in prediction research?"
 
-  Agent → find_papers_by_task("prediction")
-        → find_limitations("prediction")   # conclusions & limits, with evidence
+  Agent → search_papers("prediction research")
+        → find_limitations("prediction")   # or paper_id= from search
         → get_paper_neighbors(paper_id)    # CITES / CONTRASTS_WITH / EXTENDS
-        → compare_papers([...])            # methods, datasets, contrasts
+        → compare_papers([...])
 
   Agent synthesizes the answer, citing paper_id / page / evidence_text from MCP
 ```
@@ -70,6 +70,8 @@ my-papers/
 Relative paths are resolved from the project root. Absolute paths are also supported.
 
 After `scan`, `parse`, `extract`, and `build` use the configured `papers_dir` when no path argument is given.
+
+Verify MCP tools: `litgraph test-mcp`
 
 ## Supported file types
 
