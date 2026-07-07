@@ -81,6 +81,20 @@ class GraphQueryInterface(ABC):
         ...
 
     @abstractmethod
+    def expand_paper_graph(
+        self,
+        paper_id: str,
+        hops: int = 2,
+        relationships: Optional[List[str]] = None,
+        include_summary: bool = False,
+    ) -> List[Dict[str, Any]]:
+        ...
+
+    @abstractmethod
+    def get_shared_method_neighbors(self, paper_id: str) -> List[Dict[str, Any]]:
+        ...
+
+    @abstractmethod
     def export_graph_json(self) -> Dict[str, Any]:
         ...
 

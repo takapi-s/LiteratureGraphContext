@@ -15,6 +15,7 @@ from litgraph.graph.reference_linker import build_all_reference_citation_pairs
 from litgraph.integrations.semantic_scholar import enrich_metadata
 from litgraph.parser.bib_linker import link_bib_to_paper
 from litgraph.parser.bib_parser import load_all_bib_entries
+from litgraph.query.embedding_store import index_paper_embeddings
 
 
 def _neo4j_config(ctx: ResolvedContext) -> Dict[str, Any]:
@@ -100,6 +101,8 @@ def build_graph(
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(graph_json, f, indent=2, ensure_ascii=False)
 
+    embedding_result = index_paper_embeddings(ctx.litgraph_dir, paper_metadata)
+
     store.close()
     return {
         "papers_indexed": len(indexed_ids),
@@ -116,4 +119,5 @@ def build_graph(
         "cites_from_references": cites_from_references,
         "contrasts_edges": len(contrasts),
         "extends_edges": len(extends),
+        "embeddings_indexed": embedding_result.get("indexed", 0),
     }

@@ -8,7 +8,9 @@ from typing import Any, Dict, List, Optional
 from litgraph.graph.db_factory import get_graph_store
 from litgraph.graph.normalizer import EntityNormalizer
 from litgraph.query.comparison import comparison_markdown
+from litgraph.query.paper_search import search_papers as hybrid_search_papers
 from litgraph.query.related_work import generate_related_work_outline
+from litgraph.utils.paper_identity import normalize_paper_id_input, resolve_canonical_paper_id
 
 
 class PaperFinder:
@@ -23,10 +25,15 @@ class PaperFinder:
         self.backend = backend
         self.neo4j_config = neo4j_config
         self.aliases_path = aliases_path or (db_path.parent.parent / "aliases.yaml")
+        self.litgraph_dir = db_path.parent.parent
         self._store = None
+        self._closed = False
 
     @property
     def store(self):
+        if self._closed:
+            self._closed = False
+            self._store = None
         if self._store is None:
             self._store = get_graph_store(self.db_path, backend=self.backend, neo4j_config=self.neo4j_config)
             self._store.initialize_schema()
@@ -36,17 +43,48 @@ class PaperFinder:
         if self._store is not None:
             self._store.close()
             self._store = None
+        self._closed = True
+
+    def _resolve_paper_id(self, paper_id: str) -> str:
+        pid = normalize_paper_id_input(paper_id)
+        return resolve_canonical_paper_id(self.litgraph_dir, pid)
+
+    def _paper_not_found_error(self, paper_id: str) -> Dict[str, Any]:
+        suggestions = self.search_papers(paper_id, top_k=5)
+        mapping = {}
+        map_path = self.litgraph_dir / "paper_id_map.json"
+        if map_path.exists():
+            try:
+                import json
+                mapping = json.loads(map_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                mapping = {}
+        return {
+            "error": f"Paper not found: {paper_id}",
+            "resolved_id": self._resolve_paper_id(paper_id),
+            "suggestions": suggestions.get("papers", []),
+            "paper_id_map_entries": {
+                k: v for k, v in mapping.items()
+                if k == paper_id or v == paper_id or paper_id in (k, v)
+            },
+        }
 
     def list_papers(self) -> List[Dict[str, Any]]:
         return self.store.list_papers()
 
     def get_paper(self, paper_id: str) -> Optional[Dict[str, Any]]:
-        return self.store.get_paper(paper_id)
+        resolved = self._resolve_paper_id(paper_id)
+        paper = self.store.get_paper(resolved)
+        if paper:
+            return paper
+        if resolved != paper_id:
+            return self.store.get_paper(paper_id)
+        return None
 
     def summarize_paper(self, paper_id: str) -> Dict[str, Any]:
         paper = self.get_paper(paper_id)
         if not paper:
-            return {"error": f"Paper not found: {paper_id}"}
+            return self._paper_not_found_error(paper_id)
         return {
             "paper_id": paper.get("paper_id"),
             "title": paper.get("title"),
@@ -69,9 +107,38 @@ class PaperFinder:
     def find_papers_by_task(self, task: str) -> List[Dict[str, Any]]:
         return self.store.find_papers_by_task(task)
 
-    def find_limitations(self, topic: str) -> Dict[str, Any]:
+    def find_limitations(
+        self,
+        topic: str = "",
+        paper_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if paper_id:
+            paper = self.get_paper(paper_id)
+            if not paper:
+                return self._paper_not_found_error(paper_id)
+            pid = paper.get("paper_id")
+            items = []
+            for lim in paper.get("limitations") or []:
+                if isinstance(lim, dict):
+                    items.append({
+                        "paper_id": pid,
+                        "title": paper.get("title"),
+                        "limitation": lim.get("limitation", lim.get("text", "")),
+                        "text": lim.get("text", lim.get("limitation", "")),
+                        "page": lim.get("page"),
+                        "section": lim.get("section"),
+                        "evidence_text": lim.get("evidence_text", ""),
+                    })
+                else:
+                    items.append({
+                        "paper_id": pid,
+                        "title": paper.get("title"),
+                        "limitation": str(lim),
+                        "text": str(lim),
+                    })
+            return {"limitations": items, "paper_id": pid}
         items = self.store.find_limitations(topic)
-        return {"limitations": items}
+        return {"limitations": items, "topic": topic}
 
     def get_evidence_for_claim(self, claim_id: str) -> Dict[str, Any]:
         evidence = self.store.get_evidence_for_claim(claim_id)
@@ -80,7 +147,8 @@ class PaperFinder:
         return evidence
 
     def compare_papers(self, paper_ids: List[str]) -> Dict[str, Any]:
-        rows = self.store.compare_papers(paper_ids)
+        resolved = [self._resolve_paper_id(pid) for pid in paper_ids]
+        rows = self.store.compare_papers(resolved)
         return {"papers": rows, "markdown_table": comparison_markdown(rows)}
 
     def build_literature_matrix(self, topic: str) -> Dict[str, Any]:
@@ -98,14 +166,54 @@ class PaperFinder:
         relationships: Optional[List[str]] = None,
         include_summary: bool = False,
     ) -> Dict[str, Any]:
-        if not self.get_paper(paper_id):
-            return {"error": f"Paper not found: {paper_id}"}
+        resolved = self._resolve_paper_id(paper_id)
+        if not self.get_paper(resolved):
+            return self._paper_not_found_error(paper_id)
         neighbors = self.store.get_paper_neighbors(
-            paper_id,
+            resolved,
             relationships=relationships,
             include_summary=include_summary,
         )
-        return {"paper_id": paper_id, "neighbors": neighbors, "count": len(neighbors)}
+        return {"paper_id": resolved, "title": (self.get_paper(resolved) or {}).get("title"), "neighbors": neighbors, "count": len(neighbors)}
+
+    def expand_paper_graph(
+        self,
+        paper_id: str,
+        hops: int = 2,
+        relationships: Optional[List[str]] = None,
+        include_summary: bool = False,
+    ) -> Dict[str, Any]:
+        resolved = self._resolve_paper_id(paper_id)
+        if not self.get_paper(resolved):
+            return self._paper_not_found_error(paper_id)
+        papers = self.store.expand_paper_graph(
+            resolved,
+            hops=hops,
+            relationships=relationships,
+            include_summary=include_summary,
+        )
+        return {
+            "paper_id": resolved,
+            "title": (self.get_paper(resolved) or {}).get("title"),
+            "papers": papers,
+            "count": len(papers),
+        }
+
+    def search_papers(
+        self,
+        query: str,
+        top_k: int = 10,
+        center_paper_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        center = self._resolve_paper_id(center_paper_id) if center_paper_id else None
+        return hybrid_search_papers(
+            self,
+            query,
+            top_k=top_k,
+            center_paper_id=center,
+            litgraph_dir=self.litgraph_dir,
+            aliases_path=self.aliases_path,
+        )
 
     def _papers_full(self) -> List[Dict[str, Any]]:
         papers = []

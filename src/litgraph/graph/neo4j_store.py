@@ -371,6 +371,77 @@ class Neo4jGraphStore(GraphQueryInterface):
 
         return neighbors
 
+    def get_shared_method_neighbors(self, paper_id: str) -> List[Dict[str, Any]]:
+        rows = self._run(
+            """
+            MATCH (p:Paper {id: $id})-[:USES]->(m:Method)<-[:USES]-(n:Paper)
+            WHERE n.id <> $id
+            RETURN DISTINCT n.id AS paper_id, n.title AS title, m.name AS method
+            """,
+            {"id": paper_id},
+        )
+        return [
+            {
+                "paper_id": row["paper_id"],
+                "title": row.get("title", ""),
+                "relationship": "SHARED_METHOD",
+                "direction": "undirected",
+                "via_method": row.get("method", ""),
+            }
+            for row in rows
+        ]
+
+    def expand_paper_graph(
+        self,
+        paper_id: str,
+        hops: int = 2,
+        relationships: Optional[List[str]] = None,
+        include_summary: bool = False,
+    ) -> List[Dict[str, Any]]:
+        rels = set(relationships or ["CITES", "CITED_BY", "CONTRASTS_WITH", "EXTENDS", "EXTENDED_BY", "SHARED_METHOD"])
+        frontier = {paper_id}
+        visited = {paper_id}
+        results: List[Dict[str, Any]] = []
+
+        for hop in range(1, max(hops, 1) + 1):
+            next_frontier: set[str] = set()
+            for current_id in frontier:
+                if "SHARED_METHOD" in rels:
+                    for neighbor in self.get_shared_method_neighbors(current_id):
+                        other_id = neighbor["paper_id"]
+                        if other_id in visited:
+                            continue
+                        visited.add(other_id)
+                        next_frontier.add(other_id)
+                        entry = dict(neighbor)
+                        entry["hop"] = hop
+                        if include_summary:
+                            full = self.get_paper(other_id)
+                            if full:
+                                entry["tasks"] = full.get("tasks", [])
+                                entry["methods"] = full.get("methods", [])
+                        results.append(entry)
+
+                graph_rels = [r for r in rels if r != "SHARED_METHOD"]
+                if graph_rels:
+                    for neighbor in self.get_paper_neighbors(
+                        current_id,
+                        relationships=list(graph_rels),
+                        include_summary=include_summary,
+                    ):
+                        other_id = neighbor["paper_id"]
+                        if other_id in visited:
+                            continue
+                        visited.add(other_id)
+                        next_frontier.add(other_id)
+                        entry = dict(neighbor)
+                        entry["hop"] = hop
+                        results.append(entry)
+            frontier = next_frontier
+            if not frontier:
+                break
+        return results
+
     def export_graph_json(self) -> Dict[str, Any]:
         nodes: List[Dict[str, Any]] = []
         for label, fields in [

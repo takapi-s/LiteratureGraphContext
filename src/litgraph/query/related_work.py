@@ -34,7 +34,7 @@ def _papers_matching_topic(papers: List[Dict[str, Any]], topic: str) -> List[Dic
                 haystacks.append(str(lim))
         if q in " ".join(haystacks).lower():
             matched.append(paper)
-    return matched if matched else papers
+    return matched
 
 
 def generate_related_work_outline(
