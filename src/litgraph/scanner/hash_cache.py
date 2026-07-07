@@ -63,6 +63,37 @@ def scan_and_update(
     return cache, changed
 
 
+def find_removed_files(
+    files: List[Path],
+    cache_path: Path,
+    project_root: Path,
+) -> List[Path]:
+    """Return paths that were in the hash cache but no longer on disk."""
+    cache = load_cache(cache_path)
+    current_rels: set[str] = set()
+    for file_path in files:
+        rel = (
+            str(file_path.relative_to(project_root))
+            if file_path.is_relative_to(project_root)
+            else str(file_path)
+        )
+        current_rels.add(rel)
+    removed_rels = set(cache.keys()) - current_rels
+    removed_paths = [project_root / rel for rel in sorted(removed_rels)]
+    if removed_rels:
+        for rel in removed_rels:
+            del cache[rel]
+        save_cache(cache_path, cache)
+    return removed_paths
+
+
 def get_cached_entry(cache_path: Path, rel_path: str) -> Optional[Dict[str, Any]]:
     cache = load_cache(cache_path)
     return cache.get(rel_path)
+
+
+def remove_from_cache(cache_path: Path, rel_path: str) -> None:
+    cache = load_cache(cache_path)
+    if rel_path in cache:
+        del cache[rel_path]
+        save_cache(cache_path, cache)
