@@ -163,13 +163,15 @@ def _needs_extraction(ctx: ResolvedContext, paper_id: str, *, force: bool = Fals
 
 
 def _confirm_external_api(ctx: ResolvedContext, provider_name: str, section_count: int, skip: bool) -> bool:
-    provider = get_provider(provider_name, model=str(get_config_value(ctx, "llm_model")))
-    if provider.is_local:
+    if skip:
         return True
     confirm = get_config_value(ctx, "confirm_external_api")
     if isinstance(confirm, str):
         confirm = confirm.lower() in ("1", "true", "yes", "on")
-    if skip or not confirm:
+    if not confirm:
+        return True
+    provider = get_provider(provider_name, model=str(get_config_value(ctx, "llm_model")))
+    if provider.is_local:
         return True
     answer = console.input(
         f"Send {section_count} paper section(s) to external provider '{provider_name}'? [y/N]: "
