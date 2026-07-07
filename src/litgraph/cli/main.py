@@ -82,6 +82,7 @@ def parse_cmd(
 @app.command("extract")
 def extract_cmd(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip external API confirmation"),
+    force: bool = typer.Option(False, "--force", help="Re-extract papers that already have cache"),
     provider: Optional[str] = typer.Option(None, "--provider", help="LLM provider override"),
     model: Optional[str] = typer.Option(None, "--model", help="LLM model override"),
     background: bool = typer.Option(False, "--background", help="Run extraction in background job"),
@@ -89,14 +90,31 @@ def extract_cmd(
     """Extract structured data from parsed papers using LLM."""
     ctx = config_manager.resolve_context()
     if background:
-        job_id = helpers.extract_papers_async(ctx, skip_confirm=yes, provider=provider, model=model)
+        job_id = helpers.extract_papers_async(
+            ctx, skip_confirm=yes, provider=provider, model=model, force=force,
+        )
         console.print(f"Started extraction job: {job_id}")
         return
-    result = helpers.extract_papers(ctx, skip_confirm=yes, provider=provider, model=model)
+    result = helpers.extract_papers(
+        ctx,
+        skip_confirm=yes,
+        provider=provider,
+        model=model,
+        force=force,
+        show_progress=True,
+    )
     if result.get("cancelled"):
         console.print("[yellow]Extraction cancelled.[/yellow]")
         return
-    console.print(f"Extracted {result.get('extracted', 0)} paper(s) via {result.get('provider')}.")
+    extracted = result.get("extracted", 0)
+    skipped = result.get("skipped", 0)
+    if skipped:
+        console.print(
+            f"Extracted {extracted} paper(s), skipped {skipped} already up to date "
+            f"via {result.get('provider')}."
+        )
+    else:
+        console.print(f"Extracted {extracted} paper(s) via {result.get('provider')}.")
 
 
 @app.command("build")

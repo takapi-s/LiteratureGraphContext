@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from litgraph.cli.config_manager import ResolvedContext, get_config_value, resolve_context, save_papers_dir
@@ -94,6 +95,18 @@ def parse_papers(ctx: ResolvedContext, only_changed: bool = True) -> Dict[str, A
     }
 
 
+def _needs_extraction(ctx: ResolvedContext, paper_id: str, *, force: bool = False) -> bool:
+    if force:
+        return True
+    extracted_path = ctx.extracted_cache_dir / f"{paper_id}.json"
+    parsed_path = ctx.parsed_cache_dir / f"{paper_id}.json"
+    if not extracted_path.exists():
+        return True
+    if not parsed_path.exists():
+        return False
+    return parsed_path.stat().st_mtime > extracted_path.stat().st_mtime
+
+
 def _confirm_external_api(ctx: ResolvedContext, provider_name: str, section_count: int, skip: bool) -> bool:
     provider = get_provider(provider_name, model=str(get_config_value(ctx, "llm_model")))
     if provider.is_local:
@@ -109,29 +122,99 @@ def _confirm_external_api(ctx: ResolvedContext, provider_name: str, section_coun
     return answer.strip().lower() in ("y", "yes")
 
 
+def _run_extractions(
+    ctx: ResolvedContext,
+    parsed_docs: List[Dict[str, Any]],
+    provider_name: str,
+    model_name: Optional[str] = None,
+    *,
+    job_id: Optional[str] = None,
+    show_progress: bool = False,
+) -> List[str]:
+    extracted_ids: List[str] = []
+    total = len(parsed_docs)
+
+    def _extract_one(doc: Dict[str, Any], index: int) -> None:
+        paper_id = str(doc.get("paper_id", ""))
+        if job_id:
+            _job_manager.update_job(
+                job_id,
+                current_item=paper_id,
+                processed_items=index - 1,
+                message=f"Extracting {paper_id}",
+            )
+        extraction = extract_paper(doc, provider_name, model=model_name)
+        out = ctx.extracted_cache_dir / f"{paper_id}.json"
+        save_extraction(out, extraction)
+        extracted_ids.append(paper_id)
+        if job_id:
+            _job_manager.update_job(job_id, processed_items=index)
+
+    if show_progress and not job_id and total > 0:
+        if total == 1:
+            console.print(f"[cyan]Extracting[/cyan] {parsed_docs[0].get('paper_id')}...")
+            _extract_one(parsed_docs[0], 1)
+        else:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=console,
+                transient=False,
+            ) as progress:
+                task = progress.add_task("Extracting papers", total=total)
+                for i, doc in enumerate(parsed_docs, start=1):
+                    progress.update(task, description=f"[cyan]{doc.get('paper_id')}[/cyan]")
+                    _extract_one(doc, i)
+                    progress.advance(task)
+    else:
+        for i, doc in enumerate(parsed_docs, start=1):
+            _extract_one(doc, i)
+
+    if job_id:
+        _job_manager.update_job(job_id, processed_items=total, current_item=None)
+
+    return extracted_ids
+
+
 def extract_papers(
     ctx: ResolvedContext,
     skip_confirm: bool = False,
     provider: Optional[str] = None,
     model: Optional[str] = None,
     job_id: Optional[str] = None,
+    force: bool = False,
+    show_progress: bool = False,
 ) -> Dict[str, Any]:
     provider_name = provider or str(get_config_value(ctx, "llm_provider", "LLM_PROVIDER"))
     model_name = model or str(get_config_value(ctx, "llm_model", "LLM_MODEL"))
     parsed_files = sorted(ctx.parsed_cache_dir.glob("*.json"))
     if not parsed_files:
-        return {"extracted": 0, "message": "No parsed papers found. Run litgraph parse first."}
+        return {"extracted": 0, "skipped": 0, "message": "No parsed papers found. Run litgraph parse first."}
 
-    total_sections = 0
     parsed_docs = []
+    skipped = 0
     for pf in parsed_files:
         with open(pf, encoding="utf-8") as f:
             doc = json.load(f)
-        parsed_docs.append(doc)
-        total_sections += len(doc.get("sections", []))
+        if _needs_extraction(ctx, doc["paper_id"], force=force):
+            parsed_docs.append(doc)
+        else:
+            skipped += 1
 
+    if not parsed_docs:
+        return {
+            "extracted": 0,
+            "skipped": skipped,
+            "paper_ids": [],
+            "provider": provider_name,
+        }
+
+    total_sections = sum(len(doc.get("sections", [])) for doc in parsed_docs)
     if not _confirm_external_api(ctx, provider_name, total_sections, skip_confirm):
-        return {"extracted": 0, "cancelled": True}
+        return {"extracted": 0, "skipped": skipped, "cancelled": True}
 
     if job_id:
         _job_manager.update_job(
@@ -142,24 +225,21 @@ def extract_papers(
             message="Extracting papers",
         )
 
-    extracted_ids = []
-    for i, doc in enumerate(parsed_docs, start=1):
-        if job_id:
-            _job_manager.update_job(
-                job_id,
-                current_item=doc.get("paper_id"),
-                processed_items=i - 1,
-                message=f"Extracting {doc.get('paper_id')}",
-            )
-        extraction = extract_paper(doc, provider_name, model=model_name)
-        out = ctx.extracted_cache_dir / f"{doc['paper_id']}.json"
-        save_extraction(out, extraction)
-        extracted_ids.append(doc["paper_id"])
+    extracted_ids = _run_extractions(
+        ctx,
+        parsed_docs,
+        provider_name,
+        model_name,
+        job_id=job_id,
+        show_progress=show_progress,
+    )
 
-    if job_id:
-        _job_manager.update_job(job_id, processed_items=len(parsed_docs), current_item=None)
-
-    return {"extracted": len(extracted_ids), "paper_ids": extracted_ids, "provider": provider_name}
+    return {
+        "extracted": len(extracted_ids),
+        "skipped": skipped,
+        "paper_ids": extracted_ids,
+        "provider": provider_name,
+    }
 
 
 def extract_paper_ids(
@@ -168,30 +248,43 @@ def extract_paper_ids(
     skip_confirm: bool = False,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    force: bool = False,
+    show_progress: bool = False,
 ) -> Dict[str, Any]:
     provider_name = provider or str(get_config_value(ctx, "llm_provider", "LLM_PROVIDER"))
     model_name = model or str(get_config_value(ctx, "llm_model", "LLM_MODEL"))
     docs = []
+    skipped = 0
     for paper_id in paper_ids:
         parsed_path = ctx.parsed_cache_dir / f"{paper_id}.json"
-        if parsed_path.exists():
-            docs.append(json.loads(parsed_path.read_text(encoding="utf-8")))
+        if not parsed_path.exists():
+            continue
+        if not _needs_extraction(ctx, paper_id, force=force):
+            skipped += 1
+            continue
+        docs.append(json.loads(parsed_path.read_text(encoding="utf-8")))
 
     if not docs:
-        return {"extracted": 0, "paper_ids": [], "provider": provider_name}
+        return {"extracted": 0, "skipped": skipped, "paper_ids": [], "provider": provider_name}
 
     total_sections = sum(len(doc.get("sections", [])) for doc in docs)
     if not _confirm_external_api(ctx, provider_name, total_sections, skip_confirm):
-        return {"extracted": 0, "cancelled": True, "paper_ids": []}
+        return {"extracted": 0, "skipped": skipped, "cancelled": True, "paper_ids": []}
 
-    extracted_ids: List[str] = []
-    for doc in docs:
-        extraction = extract_paper(doc, provider_name, model=model_name)
-        out = ctx.extracted_cache_dir / f"{doc['paper_id']}.json"
-        save_extraction(out, extraction)
-        extracted_ids.append(doc["paper_id"])
+    extracted_ids = _run_extractions(
+        ctx,
+        docs,
+        provider_name,
+        model_name,
+        show_progress=show_progress,
+    )
 
-    return {"extracted": len(extracted_ids), "paper_ids": extracted_ids, "provider": provider_name}
+    return {
+        "extracted": len(extracted_ids),
+        "skipped": skipped,
+        "paper_ids": extracted_ids,
+        "provider": provider_name,
+    }
 
 
 def remove_paper_artifacts(ctx: ResolvedContext, file_path: Path, paper_id: Optional[str] = None) -> str:
@@ -362,6 +455,7 @@ def extract_papers_async(
     skip_confirm: bool = False,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    force: bool = False,
 ) -> str:
     job_id = _job_manager.create_job()
 
@@ -373,6 +467,7 @@ def extract_papers_async(
                 provider=provider,
                 model=model,
                 job_id=job_id,
+                force=force,
             )
             if result.get("cancelled"):
                 _job_manager.fail_job(job_id, "cancelled by user")
