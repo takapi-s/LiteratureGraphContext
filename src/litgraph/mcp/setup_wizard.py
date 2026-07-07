@@ -24,7 +24,9 @@ def build_mcp_client_config(project_root: Path) -> dict:
             "literature-graph-context": {
                 "command": command,
                 "args": args,
-                "cwd": str(project_root.resolve()),
+                "env": {
+                    "LITGRAPH_PROJECT_ROOT": str(project_root.resolve()),
+                },
             }
         }
     }

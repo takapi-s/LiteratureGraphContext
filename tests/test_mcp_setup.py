@@ -4,13 +4,14 @@ from pathlib import Path
 from litgraph.mcp import setup_wizard
 
 
-def test_build_mcp_client_config_uses_cwd_not_bash(tmp_path: Path):
+def test_build_mcp_client_config_uses_env_not_cwd(tmp_path: Path):
     config = setup_wizard.build_mcp_client_config(tmp_path)
 
     server = config["mcpServers"]["literature-graph-context"]
     assert server["command"] != "bash"
     assert server["args"] == ["serve-mcp"] or server["args"][-2:] == ["litgraph", "serve-mcp"]
-    assert server["cwd"] == str(tmp_path.resolve())
+    assert server["env"]["LITGRAPH_PROJECT_ROOT"] == str(tmp_path.resolve())
+    assert "cwd" not in server
     assert "serve-mcp" in server["args"]
 
 
@@ -24,7 +25,7 @@ def test_configure_mcp_client_writes_json(tmp_path: Path, monkeypatch):
     server = data["mcpServers"]["literature-graph-context"]
     assert server["command"] == "/usr/bin/litgraph"
     assert server["args"] == ["serve-mcp"]
-    assert server["cwd"] == str(tmp_path.resolve())
+    assert server["env"]["LITGRAPH_PROJECT_ROOT"] == str(tmp_path.resolve())
 
 
 def test_resolve_litgraph_mcp_command_falls_back_to_python_module(monkeypatch):
