@@ -39,6 +39,18 @@ def _read_cwd(pid: int) -> Optional[Path]:
         return None
 
 
+def _read_env_var(pid: int, name: str) -> Optional[str]:
+    try:
+        raw = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return None
+    prefix = name.encode("utf-8") + b"="
+    for entry in raw.split(b"\0"):
+        if entry.startswith(prefix):
+            return entry[len(prefix) :].decode("utf-8", errors="replace")
+    return None
+
+
 def _litgraph_subcommand(cmdline: str) -> Optional[str]:
     if "litgraph" not in cmdline:
         return None
@@ -55,10 +67,18 @@ def _litgraph_subcommand(cmdline: str) -> Optional[str]:
     return None
 
 
-def _same_project(project_root: Path, db_path: Path, cmdline: str, cwd: Optional[Path]) -> bool:
+def _same_project(
+    project_root: Path,
+    db_path: Path,
+    cmdline: str,
+    cwd: Optional[Path],
+    env_project_root: Optional[Path] = None,
+) -> bool:
     project_str = str(project_root)
     db_str = str(db_path.resolve())
     if project_str in cmdline or db_str in cmdline:
+        return True
+    if env_project_root is not None and env_project_root.resolve() == project_root.resolve():
         return True
     if cwd is None:
         return False
@@ -93,7 +113,9 @@ def find_conflicting_processes(
         if subcommand is None:
             continue
         cwd = _read_cwd(pid)
-        if _same_project(project_root, db_path, cmdline, cwd):
+        env_root_raw = _read_env_var(pid, "LITGRAPH_PROJECT_ROOT")
+        env_project_root = Path(env_root_raw).expanduser().resolve() if env_root_raw else None
+        if _same_project(project_root, db_path, cmdline, cwd, env_project_root):
             matches.append(LitgraphProcess(pid=pid, command=subcommand, cmdline=cmdline))
     return matches
 

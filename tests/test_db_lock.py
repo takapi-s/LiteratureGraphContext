@@ -31,6 +31,21 @@ def test_same_project_matches_cwd():
     assert db_lock._same_project(project, db_path, "litgraph watch", project) is True
 
 
+def test_same_project_matches_litgraph_project_root_env():
+    project = Path("/tmp/toyopay")
+    db_path = project / ".litgraph/db/literature.kuzu"
+    assert (
+        db_lock._same_project(
+            project,
+            db_path,
+            "litgraph serve-mcp",
+            Path("/home/pocky"),
+            env_project_root=project,
+        )
+        is True
+    )
+
+
 def test_release_db_lock_stops_matching_processes(monkeypatch):
     db_path = Path("/tmp/project/.litgraph/db/literature.kuzu")
     target = db_lock.LitgraphProcess(pid=1234, command="watch", cmdline="litgraph watch")
