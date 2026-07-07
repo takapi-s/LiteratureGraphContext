@@ -17,11 +17,21 @@ PROJECT_DIR_NAME = ".litgraph"
 DEFAULT_PROJECT_CONFIG: Dict[str, Any] = {
     "papers_dir": "examples/papers",
     "database": "kuzu",
+    "neo4j_uri": "bolt://localhost:7687",
+    "neo4j_user": "neo4j",
+    "neo4j_password": "",
+    "neo4j_database": "neo4j",
     "llm_provider": "openai",
     "llm_model": "gpt-4o-mini",
     "confirm_external_api": True,
     "ollama_base_url": "http://localhost:11434",
     "ollama_model": "llama3.2",
+    "local_llm_recommendations": {
+        "ollama": ["llama3.2", "mistral", "qwen2.5:7b"],
+        "default_provider": "ollama",
+    },
+    "zotero_user_id": "",
+    "zotero_api_key": "",
 }
 
 

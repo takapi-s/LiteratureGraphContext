@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,14 +15,35 @@ from litgraph.cli.config_manager import ResolvedContext, get_config_value, resol
 from litgraph.core.jobs import JobManager, JobStatus
 from litgraph.extractor.llm_extractor import extract_paper, save_extraction
 from litgraph.extractor.providers import get_provider
-from litgraph.graph.graph_builder import build_graph
+from litgraph.graph.graph_builder import build_graph, _neo4j_config
+from litgraph.graph.db_factory import get_graph_store
 from litgraph.parser.dispatcher import collect_parse_targets, parse_file
 from litgraph.query.paper_finder import PaperFinder
 from litgraph.scanner.file_scanner import discover_papers
-from litgraph.scanner.hash_cache import scan_and_update
+from litgraph.scanner.hash_cache import find_removed_files, remove_from_cache, scan_and_update
+from litgraph.utils.ids import paper_id_from_path
 
 console = Console()
 _job_manager = JobManager()
+
+
+def get_job_manager() -> JobManager:
+    return _job_manager
+
+
+def _finder(ctx: ResolvedContext) -> PaperFinder:
+    backend = str(get_config_value(ctx, "database", "LITGRAPH_DATABASE"))
+    return PaperFinder(
+        ctx.db_path,
+        aliases_path=ctx.aliases_path,
+        backend=backend,
+        neo4j_config=_neo4j_config(ctx),
+    )
+
+
+def _graph_store(ctx: ResolvedContext):
+    backend = str(get_config_value(ctx, "database", "LITGRAPH_DATABASE"))
+    return get_graph_store(ctx.db_path, backend=backend, neo4j_config=_neo4j_config(ctx))
 
 
 def _rel_path(ctx: ResolvedContext, path: Path) -> str:
@@ -92,6 +114,7 @@ def extract_papers(
     skip_confirm: bool = False,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     provider_name = provider or str(get_config_value(ctx, "llm_provider", "LLM_PROVIDER"))
     model_name = model or str(get_config_value(ctx, "llm_model", "LLM_MODEL"))
@@ -110,13 +133,228 @@ def extract_papers(
     if not _confirm_external_api(ctx, provider_name, total_sections, skip_confirm):
         return {"extracted": 0, "cancelled": True}
 
+    if job_id:
+        _job_manager.update_job(
+            job_id,
+            status=JobStatus.RUNNING,
+            total_items=len(parsed_docs),
+            processed_items=0,
+            message="Extracting papers",
+        )
+
     extracted_ids = []
-    for doc in parsed_docs:
+    for i, doc in enumerate(parsed_docs, start=1):
+        if job_id:
+            _job_manager.update_job(
+                job_id,
+                current_item=doc.get("paper_id"),
+                processed_items=i - 1,
+                message=f"Extracting {doc.get('paper_id')}",
+            )
         extraction = extract_paper(doc, provider_name, model=model_name)
         out = ctx.extracted_cache_dir / f"{doc['paper_id']}.json"
         save_extraction(out, extraction)
         extracted_ids.append(doc["paper_id"])
+
+    if job_id:
+        _job_manager.update_job(job_id, processed_items=len(parsed_docs), current_item=None)
+
     return {"extracted": len(extracted_ids), "paper_ids": extracted_ids, "provider": provider_name}
+
+
+def extract_paper_ids(
+    ctx: ResolvedContext,
+    paper_ids: List[str],
+    skip_confirm: bool = False,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> Dict[str, Any]:
+    provider_name = provider or str(get_config_value(ctx, "llm_provider", "LLM_PROVIDER"))
+    model_name = model or str(get_config_value(ctx, "llm_model", "LLM_MODEL"))
+    docs = []
+    for paper_id in paper_ids:
+        parsed_path = ctx.parsed_cache_dir / f"{paper_id}.json"
+        if parsed_path.exists():
+            docs.append(json.loads(parsed_path.read_text(encoding="utf-8")))
+
+    if not docs:
+        return {"extracted": 0, "paper_ids": [], "provider": provider_name}
+
+    total_sections = sum(len(doc.get("sections", [])) for doc in docs)
+    if not _confirm_external_api(ctx, provider_name, total_sections, skip_confirm):
+        return {"extracted": 0, "cancelled": True, "paper_ids": []}
+
+    extracted_ids: List[str] = []
+    for doc in docs:
+        extraction = extract_paper(doc, provider_name, model=model_name)
+        out = ctx.extracted_cache_dir / f"{doc['paper_id']}.json"
+        save_extraction(out, extraction)
+        extracted_ids.append(doc["paper_id"])
+
+    return {"extracted": len(extracted_ids), "paper_ids": extracted_ids, "provider": provider_name}
+
+
+def remove_paper_artifacts(ctx: ResolvedContext, file_path: Path, paper_id: Optional[str] = None) -> str:
+    pid = paper_id or paper_id_from_path(file_path)
+    for cache_file in (
+        ctx.parsed_cache_dir / f"{pid}.json",
+        ctx.extracted_cache_dir / f"{pid}.json",
+    ):
+        if cache_file.exists():
+            cache_file.unlink()
+    remove_from_cache(ctx.files_cache_path, _rel_path(ctx, file_path))
+    return pid
+
+
+def _handle_deleted_paths(ctx: ResolvedContext, deleted_paths: List[Path]) -> Dict[str, Any]:
+    removed_paper_ids: List[str] = []
+    bib_removed = 0
+    store = _graph_store(ctx)
+    try:
+        for path in deleted_paths:
+            suffix = path.suffix.lower()
+            if suffix == ".bib":
+                bib_cache = ctx.bib_cache_dir / f"{path.stem}.json"
+                if bib_cache.exists():
+                    bib_cache.unlink()
+                    bib_removed += 1
+                remove_from_cache(ctx.files_cache_path, _rel_path(ctx, path))
+            elif suffix in (".pdf", ".md"):
+                paper_id = remove_paper_artifacts(ctx, path)
+                store.delete_paper(paper_id)
+                removed_paper_ids.append(paper_id)
+    finally:
+        store.close()
+    return {"removed_paper_ids": removed_paper_ids, "bib_files_removed": bib_removed}
+
+
+def process_watch_changes(
+    ctx: ResolvedContext,
+    changed_paths: List[Path],
+    deleted_paths: List[Path],
+    auto_extract: bool = False,
+    auto_build: bool = True,
+    skip_confirm: bool = False,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    enrich_s2: bool = False,
+) -> Dict[str, Any]:
+    """Process filesystem changes from the papers watcher."""
+    ctx.parsed_cache_dir.mkdir(parents=True, exist_ok=True)
+    ctx.bib_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    delete_info = _handle_deleted_paths(ctx, deleted_paths)
+
+    parsed_ids: List[str] = []
+    bib_changed = delete_info["bib_files_removed"] > 0
+    for path in changed_paths:
+        if not path.exists():
+            continue
+        kind, paper_id = parse_file(path, ctx.bib_cache_dir, ctx.parsed_cache_dir)
+        if kind == "bib":
+            bib_changed = True
+        elif kind in ("pdf", "md") and paper_id:
+            parsed_ids.append(paper_id)
+
+    files = discover_papers(ctx.papers_dir)
+    scan_and_update(files, ctx.files_cache_path, ctx.project_root)
+
+    pending_extract = [
+        pid for pid in parsed_ids
+        if not (ctx.extracted_cache_dir / f"{pid}.json").exists()
+    ]
+    extracted = 0
+    if auto_extract and parsed_ids:
+        extract_result = extract_paper_ids(
+            ctx,
+            parsed_ids,
+            skip_confirm=skip_confirm,
+            provider=provider,
+            model=model,
+        )
+        if extract_result.get("cancelled"):
+            return {
+                "parsed": len(parsed_ids),
+                "paper_ids": parsed_ids,
+                "pending_extract": pending_extract,
+                "bib_updated": bib_changed,
+                "cancelled": True,
+            }
+        extracted = extract_result.get("extracted", 0)
+        pending_extract = [
+            pid for pid in parsed_ids
+            if not (ctx.extracted_cache_dir / f"{pid}.json").exists()
+        ]
+
+    build_result: Dict[str, Any] = {}
+    if auto_build and (bib_changed or parsed_ids or deleted_paths):
+        build_result = build_paper_graph(ctx, enrich_s2=enrich_s2)
+
+    return {
+        "parsed": len(parsed_ids),
+        "paper_ids": parsed_ids,
+        "extracted": extracted,
+        "pending_extract": pending_extract,
+        "bib_updated": bib_changed,
+        "removed_paper_ids": delete_info["removed_paper_ids"],
+        "papers_indexed": build_result.get("papers_indexed", 0),
+    }
+
+
+def sync_papers_directory(
+    ctx: ResolvedContext,
+    auto_extract: bool = False,
+    auto_build: bool = True,
+    skip_confirm: bool = False,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    enrich_s2: bool = False,
+) -> Dict[str, Any]:
+    """Scan the papers directory and process all changed or removed files."""
+    files = discover_papers(ctx.papers_dir)
+    removed = find_removed_files(files, ctx.files_cache_path, ctx.project_root)
+    _, changed = scan_and_update(files, ctx.files_cache_path, ctx.project_root)
+    return process_watch_changes(
+        ctx,
+        changed_paths=changed,
+        deleted_paths=removed,
+        auto_extract=auto_extract,
+        auto_build=auto_build,
+        skip_confirm=skip_confirm,
+        provider=provider,
+        model=model,
+        enrich_s2=enrich_s2,
+    )
+
+
+def run_papers_watcher(
+    ctx: ResolvedContext,
+    auto_extract: bool = False,
+    auto_build: bool = True,
+    debounce: float = 2.0,
+    sync_on_start: bool = False,
+    skip_confirm: bool = False,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    enrich_s2: bool = False,
+    polling: Optional[bool] = None,
+    on_result: Optional[Any] = None,
+) -> None:
+    from litgraph.core.watcher import PapersWatcher, WatchOptions
+
+    options = WatchOptions(
+        auto_extract=auto_extract,
+        auto_build=auto_build,
+        debounce_interval=debounce,
+        sync_on_start=sync_on_start,
+        skip_confirm=skip_confirm,
+        provider=provider,
+        model=model,
+        enrich_s2=enrich_s2,
+        on_result=on_result,
+    )
+    watcher = PapersWatcher(ctx, options=options, use_polling=polling)
+    watcher.start(block=True)
 
 
 def extract_papers_async(
@@ -128,10 +366,18 @@ def extract_papers_async(
     job_id = _job_manager.create_job()
 
     def _run() -> None:
-        _job_manager.update_job(job_id, status=JobStatus.RUNNING)
         try:
-            result = extract_papers(ctx, skip_confirm=skip_confirm, provider=provider, model=model)
-            _job_manager.complete_job(job_id, result)
+            result = extract_papers(
+                ctx,
+                skip_confirm=skip_confirm,
+                provider=provider,
+                model=model,
+                job_id=job_id,
+            )
+            if result.get("cancelled"):
+                _job_manager.fail_job(job_id, "cancelled by user")
+            else:
+                _job_manager.complete_job(job_id, result)
         except Exception as exc:
             _job_manager.fail_job(job_id, str(exc))
 
@@ -139,13 +385,24 @@ def extract_papers_async(
     return job_id
 
 
-def build_paper_graph(ctx: ResolvedContext) -> Dict[str, Any]:
+def build_paper_graph(ctx: ResolvedContext, enrich_s2: bool = False) -> Dict[str, Any]:
     extractions: List[Dict[str, Any]] = []
     for ef in sorted(ctx.extracted_cache_dir.glob("*.json")):
         extractions.append(json.loads(ef.read_text(encoding="utf-8")))
-    if not extractions:
-        return {"papers_indexed": 0, "message": "No extracted papers found. Run litgraph extract first."}
-    return build_graph(ctx, extractions)
+    if not extractions and not list(ctx.bib_cache_dir.glob("*.json")):
+        return {"papers_indexed": 0, "message": "No extracted papers or bib cache found."}
+    return build_graph(ctx, extractions, enrich_s2=enrich_s2)
+
+
+def list_jobs() -> List[Dict[str, Any]]:
+    return [_job_manager.job_to_dict(j) for j in _job_manager.list_jobs()]
+
+
+def check_job_status(job_id: str) -> Dict[str, Any]:
+    job = _job_manager.get_job(job_id)
+    if not job:
+        return {"error": f"Job not found: {job_id}"}
+    return _job_manager.job_to_dict(job)
 
 
 def run_query(
@@ -157,8 +414,9 @@ def run_query(
     paper_id: Optional[str] = None,
     claim_id: Optional[str] = None,
     paper_ids: Optional[List[str]] = None,
+    min_papers: Optional[int] = None,
 ) -> Dict[str, Any]:
-    finder = PaperFinder(ctx.db_path)
+    finder = _finder(ctx)
     if query_type == "papers":
         if method:
             return {"papers": finder.find_papers_by_method(method)}
@@ -173,12 +431,32 @@ def run_query(
         return finder.get_evidence_for_claim(claim_id or "")
     if query_type == "compare":
         return finder.compare_papers(paper_ids or [])
+    if query_type == "matrix":
+        return finder.build_literature_matrix(topic or "")
+    if query_type == "gaps":
+        return finder.find_research_gaps(topic or "", min_papers=min_papers or 1)
+    if query_type == "outline":
+        return finder.related_work_outline(topic or "")
     return {"error": f"Unknown query type: {query_type}"}
+
+
+def launch_visualizer(ctx: ResolvedContext, port: int = 8765, open_browser: bool = True) -> None:
+    from litgraph.viz.server import run_viz_server
+
+    run_viz_server(ctx, host="127.0.0.1", port=port, open_browser=open_browser)
 
 
 def print_query_result(result: Dict[str, Any]) -> None:
     if "markdown_table" in result:
         console.print(result["markdown_table"])
+        return
+    if "markdown_outline" in result:
+        console.print(result["markdown_outline"])
+        return
+    if "gaps" in result:
+        for gap in result.get("gaps", []):
+            console.print(f"\n[bold]{gap.get('gap')}[/bold]")
+            console.print(f"  Papers: {', '.join(gap.get('supporting_papers', []))}")
         return
     if "limitations" in result:
         table = Table(title="Limitations")

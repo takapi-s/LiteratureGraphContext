@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
+import json
 import typer
 from rich.console import Console
 
@@ -99,11 +100,142 @@ def extract_cmd(
 
 
 @app.command("build")
-def build_cmd() -> None:
-    """Build Kuzu graph from extracted JSON."""
+def build_cmd(
+    enrich_s2: bool = typer.Option(False, "--enrich-s2", help="Enrich metadata via Semantic Scholar"),
+) -> None:
+    """Build graph from extracted JSON and bib metadata."""
     ctx = config_manager.resolve_context()
-    result = helpers.build_paper_graph(ctx)
-    console.print(f"Indexed {result.get('papers_indexed', 0)} paper(s), nodes={result.get('nodes', 0)}.")
+    result = helpers.build_paper_graph(ctx, enrich_s2=enrich_s2)
+    console.print(
+        f"Indexed {result.get('papers_indexed', 0)} paper(s), "
+        f"nodes={result.get('nodes', 0)}, edges={result.get('edges', 0)}."
+    )
+
+
+@app.command("watch")
+def watch_cmd(
+    auto_extract: bool = typer.Option(
+        False,
+        "--auto-extract",
+        help="Run LLM extraction on new/changed papers (off by default)",
+    ),
+    no_build: bool = typer.Option(False, "--no-build", help="Skip graph rebuild after changes"),
+    debounce: float = typer.Option(2.0, "--debounce", help="Debounce interval in seconds"),
+    sync_on_start: bool = typer.Option(False, "--sync-on-start", help="Process pending changes before watching"),
+    polling: bool = typer.Option(False, "--polling", help="Use polling observer (or set LITGRAPH_WATCH_POLLING=1)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip external API confirmation for auto-extract"),
+    provider: Optional[str] = typer.Option(None, "--provider", help="LLM provider for --auto-extract"),
+    model: Optional[str] = typer.Option(None, "--model", help="LLM model for --auto-extract"),
+    enrich_s2: bool = typer.Option(False, "--enrich-s2", help="Enrich metadata via Semantic Scholar on rebuild"),
+) -> None:
+    """Watch papers directory; default pipeline is scan → parse → build (no LLM)."""
+    ctx = config_manager.resolve_context()
+
+    def _on_result(result: dict) -> None:
+        parsed = result.get("parsed", 0)
+        removed = result.get("removed_paper_ids", [])
+        pending = result.get("pending_extract", [])
+        if parsed:
+            console.print(f"[green]Parsed {parsed} paper(s).[/green]")
+        if removed:
+            console.print(f"[yellow]Removed {len(removed)} paper(s) from graph.[/yellow]")
+        if result.get("bib_updated"):
+            console.print("[green]Bib metadata updated.[/green]")
+        if result.get("papers_indexed") is not None and result.get("papers_indexed", 0) > 0:
+            console.print(f"[green]Graph rebuilt: {result['papers_indexed']} paper(s) indexed.[/green]")
+        if pending:
+            console.print(
+                f"[yellow]{len(pending)} paper(s) parsed but not in graph "
+                f"(run litgraph extract): {', '.join(pending)}[/yellow]"
+            )
+        if result.get("cancelled"):
+            console.print("[yellow]Auto-extract cancelled.[/yellow]")
+
+    console.print(
+        f"Watching {ctx.papers_dir} "
+        f"(auto_extract={'on' if auto_extract else 'off'}, build={'on' if not no_build else 'off'}). "
+        "Press Ctrl+C to stop."
+    )
+    helpers.run_papers_watcher(
+        ctx,
+        auto_extract=auto_extract,
+        auto_build=not no_build,
+        debounce=debounce,
+        sync_on_start=sync_on_start,
+        skip_confirm=yes,
+        provider=provider,
+        model=model,
+        enrich_s2=enrich_s2,
+        polling=polling,
+        on_result=_on_result,
+    )
+
+
+@app.command("viz")
+def viz_cmd(
+    port: int = typer.Option(8765, "--port"),
+    no_browser: bool = typer.Option(False, "--no-browser"),
+) -> None:
+    """Launch local Web UI for graph visualization."""
+    ctx = config_manager.resolve_context()
+    console.print(f"[green]Starting graph viewer on http://127.0.0.1:{port}[/green]")
+    helpers.launch_visualizer(ctx, port=port, open_browser=not no_browser)
+
+
+jobs_app = typer.Typer(help="Background job commands.")
+app.add_typer(jobs_app, name="jobs")
+
+
+@jobs_app.command("list")
+def jobs_list() -> None:
+    """List background jobs."""
+    for job in helpers.list_jobs():
+        console.print_json(json.dumps(job, ensure_ascii=False))
+
+
+@jobs_app.command("status")
+def jobs_status(job_id: str = typer.Argument(..., help="Job ID")) -> None:
+    """Check background job status."""
+    console.print_json(json.dumps(helpers.check_job_status(job_id), ensure_ascii=False))
+
+
+import_app = typer.Typer(help="Import external libraries.")
+app.add_typer(import_app, name="import")
+
+
+@import_app.command("zotero")
+def import_zotero(
+    export_path: Path = typer.Argument(..., help="Zotero JSON export file"),
+) -> None:
+    """Import a Zotero JSON export into bib cache."""
+    from litgraph.integrations.zotero import import_zotero_export
+
+    ctx = config_manager.resolve_context()
+    entries = import_zotero_export(export_path.resolve(), ctx.bib_cache_dir)
+    console.print(f"Imported {len(entries)} entries from Zotero export.")
+
+
+@import_app.command("zotero-sync")
+def import_zotero_sync(
+    collection: Optional[str] = typer.Option(None, "--collection", help="Zotero collection key"),
+    full: bool = typer.Option(False, "--full", help="Full resync instead of incremental"),
+    rebuild: bool = typer.Option(False, "--rebuild", help="Rebuild graph after sync"),
+) -> None:
+    """Sync Zotero library via Web API (requires ZOTERO_USER_ID and ZOTERO_API_KEY)."""
+    from litgraph.integrations.zotero import sync_zotero_library
+
+    ctx = config_manager.resolve_context()
+    result = sync_zotero_library(
+        ctx.bib_cache_dir,
+        collection_key=collection,
+        full_sync=full,
+    )
+    console.print(
+        f"Synced {result.get('synced', 0)} entries (version {result.get('last_version')})."
+    )
+    if rebuild:
+        build_result = helpers.build_paper_graph(ctx)
+        console.print(f"Rebuilt graph: {build_result.get('papers_indexed', 0)} paper(s).")
 
 
 @query_app.command("papers")
@@ -134,6 +266,57 @@ def query_compare(
     """Compare papers side by side."""
     ctx = config_manager.resolve_context()
     result = helpers.run_query(ctx, "compare", paper_ids=paper_ids)
+    helpers.print_query_result(result)
+
+
+@query_app.command("matrix")
+def query_matrix(
+    topic: str = typer.Option(..., "--topic"),
+) -> None:
+    """Build a literature matrix for a topic."""
+    ctx = config_manager.resolve_context()
+    result = helpers.run_query(ctx, "matrix", topic=topic)
+    helpers.print_query_result(result)
+
+
+@query_app.command("paper")
+def query_paper(
+    paper_id: str = typer.Argument(..., help="Paper ID"),
+) -> None:
+    """Summarize a paper."""
+    ctx = config_manager.resolve_context()
+    result = helpers.run_query(ctx, "paper", paper_id=paper_id)
+    helpers.print_query_result(result)
+
+
+@query_app.command("claim")
+def query_claim(
+    claim_id: str = typer.Argument(..., help="Claim ID"),
+) -> None:
+    """Get evidence for a claim."""
+    ctx = config_manager.resolve_context()
+    result = helpers.run_query(ctx, "claim", claim_id=claim_id)
+    helpers.print_query_result(result)
+
+
+@query_app.command("gaps")
+def query_gaps(
+    topic: str = typer.Option(..., "--topic"),
+    min_papers: int = typer.Option(1, "--min-papers"),
+) -> None:
+    """Find research gaps from clustered limitations."""
+    ctx = config_manager.resolve_context()
+    result = helpers.run_query(ctx, "gaps", topic=topic, min_papers=min_papers)
+    helpers.print_query_result(result)
+
+
+@query_app.command("outline")
+def query_outline(
+    topic: str = typer.Option(..., "--topic"),
+) -> None:
+    """Generate related work section outline."""
+    ctx = config_manager.resolve_context()
+    result = helpers.run_query(ctx, "outline", topic=topic)
     helpers.print_query_result(result)
 
 

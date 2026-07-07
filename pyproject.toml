@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "literature-graph"
-version = "0.1.0"
+version = "0.4.0"
 description = "LiteratureGraphContext: structure paper PDFs into a knowledge graph for AI assistants."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -28,6 +28,9 @@ dependencies = [
     "google-generativeai>=0.5",
     "httpx",
     "pathspec>=0.12.1",
+    "watchdog>=4.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.0",
 ]
 
 [project.optional-dependencies]
@@ -35,12 +38,19 @@ dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
 ]
+neo4j = [
+    "neo4j>=5.15.0",
+]
 
 [project.scripts]
 litgraph = "litgraph.cli.main:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/litgraph"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/litgraph/viz/static" = "litgraph/viz/static"
+"src/litgraph/viz/dist" = "litgraph/viz/dist"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
