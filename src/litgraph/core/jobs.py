@@ -65,6 +65,25 @@ class JobManager:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def list_jobs(self) -> List[JobInfo]:
+        with self._lock:
+            return list(self._jobs.values())
+
+    def job_to_dict(self, job: JobInfo) -> Dict[str, Any]:
+        return {
+            "job_id": job.job_id,
+            "status": job.status.value,
+            "start_time": job.start_time.isoformat(),
+            "end_time": job.end_time.isoformat() if job.end_time else None,
+            "total_items": job.total_items,
+            "processed_items": job.processed_items,
+            "progress_percentage": round(job.progress_percentage, 1),
+            "current_item": job.current_item,
+            "message": job.message,
+            "errors": job.errors,
+            "result": job.result,
+        }
+
     def complete_job(self, job_id: str, result: Optional[Dict[str, Any]] = None) -> None:
         self.update_job(
             job_id,
