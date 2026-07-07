@@ -89,11 +89,14 @@ Prioritized under the design philosophy above.
 Re-index required (no migrate script):
 
 ```bash
-rm -rf .litgraph/cache/parsed .litgraph/cache/extracted .litgraph/db .litgraph/paper_id_map.json
-litgraph scan && litgraph parse && litgraph extract -y && litgraph build
+rm -rf .litgraph/cache/parsed .litgraph/cache/extracted .litgraph/cache/files.json \
+  .litgraph/db .litgraph/paper_id_map.json
+litgraph scan && litgraph parse --all && litgraph extract -y && litgraph build
 # Restart MCP server
 litgraph test-mcp   # verify all tools
 ```
+
+`parse --all` is required after clearing caches so files are parsed even when the hash cache reports no changes.
 
 ---
 

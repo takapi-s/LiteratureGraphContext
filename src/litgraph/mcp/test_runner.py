@@ -8,14 +8,22 @@ from typing import Any, Dict, List, Optional
 from rich.console import Console
 from rich.table import Table
 
+from litgraph.mcp.smoke_cases import project_smoke_cases
 from litgraph.mcp.tool_service import MCPToolService
-from tests.fixtures.mcp_tool_cases import mcp_tool_cases
 
 console = Console()
 
 
 def run_mcp_smoke_tests(cwd: Optional[Path] = None, *, verbose: bool = False) -> Dict[str, Any]:
     service = MCPToolService(cwd)
+    cases = project_smoke_cases(service)
+    if not cases:
+        console.print(
+            "[red]No indexed papers found.[/red] Run: "
+            "litgraph scan && litgraph parse --all && litgraph extract -y && litgraph build"
+        )
+        return {"passed": 0, "failed": 1, "results": []}
+
     results: List[Dict[str, Any]] = []
     passed = 0
     failed = 0
@@ -25,7 +33,7 @@ def run_mcp_smoke_tests(cwd: Optional[Path] = None, *, verbose: bool = False) ->
     table.add_column("Status")
     table.add_column("Detail")
 
-    for case in mcp_tool_cases():
+    for case in cases:
         name = case["tool"]
         args = case.get("args", {})
         try:
