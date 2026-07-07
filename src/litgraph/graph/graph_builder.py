@@ -7,10 +7,11 @@ import os
 from typing import Any, Dict, List, Set
 
 from litgraph.cli.config_manager import ResolvedContext, get_config_value
-from litgraph.graph.citation_builder import bib_only_entries, build_citation_pairs
+from litgraph.graph.citation_builder import bib_only_entries, build_citation_pairs, merge_citation_pairs
 from litgraph.graph.db_factory import get_graph_store
 from litgraph.graph.normalizer import EntityNormalizer
 from litgraph.graph.reasoning import infer_contrasts_and_extends
+from litgraph.graph.reference_linker import build_all_reference_citation_pairs
 from litgraph.integrations.semantic_scholar import enrich_metadata
 from litgraph.parser.bib_linker import link_bib_to_paper
 from litgraph.parser.bib_parser import load_all_bib_entries
@@ -73,13 +74,20 @@ def build_graph(
         store.upsert_bib_only_paper(pid, metadata)
         indexed_ids.add(pid)
 
-    for citing, cited in build_citation_pairs(bib_entries, indexed_ids):
+    paper_metadata = [store.get_paper(pid) for pid in sorted(indexed_ids)]
+    paper_metadata = [p for p in paper_metadata if p]
+    bib_pairs = build_citation_pairs(bib_entries, indexed_ids)
+    ref_pairs, cites_from_references = build_all_reference_citation_pairs(
+        ctx.parsed_cache_dir,
+        indexed_ids,
+        paper_metadata,
+    )
+    all_cites_pairs = merge_citation_pairs(bib_pairs, ref_pairs)
+    for citing, cited in all_cites_pairs:
         store.upsert_cites_edge(citing, cited)
 
-    all_papers = [store.get_paper(pid) for pid in sorted(indexed_ids)]
-    all_papers = [p for p in all_papers if p]
-    cites_pairs = build_citation_pairs(bib_entries, indexed_ids)
-    contrasts, extends = infer_contrasts_and_extends(all_papers, cites_pairs)
+    all_papers = paper_metadata
+    contrasts, extends = infer_contrasts_and_extends(all_papers, all_cites_pairs)
     for a, b in contrasts:
         store.upsert_paper_relationship(a, b, "CONTRASTS_WITH")
         store.upsert_paper_relationship(b, a, "CONTRASTS_WITH")
@@ -103,7 +111,9 @@ def build_graph(
             if link_bib_to_paper(raw["paper_id"], raw.get("path"), raw.get("title"), bib_entries)
         ),
         "bib_only_papers": len(bib_only),
-        "cites_edges": len(cites_pairs),
+        "cites_edges": len(all_cites_pairs),
+        "cites_from_bib": len(bib_pairs),
+        "cites_from_references": cites_from_references,
         "contrasts_edges": len(contrasts),
         "extends_edges": len(extends),
     }

@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Tuple
 from litgraph.parser.bib_parser import parse_bib_file, save_bib_cache
 from litgraph.parser.md_parser import parse_md
 from litgraph.parser.pdf_parser import parse_pdf
-from litgraph.parser.section_splitter import split_sections
+from litgraph.parser.reference_parser import parse_references_section
+from litgraph.parser.section_splitter import get_section_text, split_sections
 from litgraph.utils.ids import paper_id_from_path
 
 
@@ -19,6 +20,14 @@ def parse_file(file_path: Path, bib_cache_dir: Path, parsed_cache_dir: Path) -> 
     if suffix == ".pdf":
         parsed = split_sections(parse_pdf(file_path))
         parsed["source_type"] = "pdf"
+        ref_text = get_section_text(parsed, "References", "Bibliography")
+        if ref_text:
+            ref_data = parse_references_section(ref_text)
+            parsed["references"] = ref_data.get("references", [])
+            parsed["reference_meta"] = ref_data.get("reference_meta", {})
+        else:
+            parsed["references"] = []
+            parsed["reference_meta"] = {"count": 0, "parsed": 0}
         out = parsed_cache_dir / f"{parsed['paper_id']}.json"
         out.write_text(json.dumps(parsed, indent=2, ensure_ascii=False), encoding="utf-8")
         return "pdf", parsed["paper_id"]

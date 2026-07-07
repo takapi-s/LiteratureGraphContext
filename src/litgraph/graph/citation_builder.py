@@ -50,6 +50,20 @@ def build_citation_pairs(
     return pairs
 
 
+def merge_citation_pairs(
+    *pair_lists: List[Tuple[str, str]],
+) -> List[Tuple[str, str]]:
+    """Merge multiple CITES pair lists, deduplicating."""
+    merged: List[Tuple[str, str]] = []
+    seen: Set[Tuple[str, str]] = set()
+    for pair_list in pair_lists:
+        for pair in pair_list:
+            if pair not in seen:
+                seen.add(pair)
+                merged.append(pair)
+    return merged
+
+
 def bib_only_entries(
     bib_entries: List[Dict[str, Any]],
     indexed_paper_ids: Set[str],
