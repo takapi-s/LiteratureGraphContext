@@ -5,16 +5,12 @@ from litgraph.mcp.server import MCPServer
 
 def test_mcp_tools_list(project_tmp, monkeypatch):
     monkeypatch.chdir(project_tmp)
-    from litgraph.cli.config_manager import init_project
-    from tests.fixtures.extracted_fixtures import write_fixtures
-    from litgraph.graph.graph_builder import build_graph
-    from litgraph.cli.config_manager import resolve_context
+    from litgraph.cli.config_manager import init_project, resolve_context
+    from tests.fixtures.extracted_fixtures import build_fixture_graph, write_fixtures
 
     init_project(project_tmp)
     write_fixtures(project_tmp / ".litgraph" / "cache" / "extracted")
-    ctx = resolve_context(project_tmp)
-    from tests.fixtures.extracted_fixtures import FIXTURES
-    build_graph(ctx, FIXTURES)
+    build_fixture_graph(resolve_context(project_tmp))
 
     server = MCPServer(project_tmp)
     resp = server.handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
@@ -35,12 +31,11 @@ def test_mcp_tools_list(project_tmp, monkeypatch):
 def test_mcp_compare_papers(project_tmp, monkeypatch):
     monkeypatch.chdir(project_tmp)
     from litgraph.cli.config_manager import init_project, resolve_context
-    from tests.fixtures.extracted_fixtures import FIXTURES, write_fixtures
-    from litgraph.graph.graph_builder import build_graph
+    from tests.fixtures.extracted_fixtures import build_fixture_graph, write_fixtures
 
     init_project(project_tmp)
     write_fixtures(project_tmp / ".litgraph" / "cache" / "extracted")
-    build_graph(resolve_context(project_tmp), FIXTURES)
+    build_fixture_graph(resolve_context(project_tmp))
 
     server = MCPServer(project_tmp)
     call = server.handle_request({

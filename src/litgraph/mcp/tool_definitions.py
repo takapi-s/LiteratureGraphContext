@@ -35,11 +35,13 @@ TOOLS = {
     },
     "find_limitations": {
         "name": "find_limitations",
-        "description": "Find limitations related to a topic, with evidence (page, section, evidence_text).",
+        "description": "Find limitations related to a topic or a specific paper, with evidence (page, section, evidence_text).",
         "inputSchema": {
             "type": "object",
-            "properties": {"topic": {"type": "string"}},
-            "required": ["topic"],
+            "properties": {
+                "topic": {"type": "string"},
+                "paper_id": {"type": "string"},
+            },
         },
     },
     "get_evidence_for_claim": {
@@ -95,6 +97,42 @@ TOOLS = {
             "type": "object",
             "properties": {
                 "paper_id": {"type": "string"},
+                "relationships": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "include_summary": {"type": "boolean", "default": False},
+            },
+            "required": ["paper_id"],
+        },
+    },
+    "search_papers": {
+        "name": "search_papers",
+        "description": (
+            "Search indexed papers by natural-language query. Returns paper_id, title, score, "
+            "and match_reason. Use this first for ambiguous questions before summarize_paper."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "top_k": {"type": "integer", "default": 10},
+                "center_paper_id": {"type": "string"},
+            },
+            "required": ["query"],
+        },
+    },
+    "expand_paper_graph": {
+        "name": "expand_paper_graph",
+        "description": (
+            "Multi-hop graph expansion from a seed paper across CITES, EXTENDS, CONTRASTS_WITH, "
+            "and shared methods."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "paper_id": {"type": "string"},
+                "hops": {"type": "integer", "default": 2},
                 "relationships": {
                     "type": "array",
                     "items": {"type": "string"},

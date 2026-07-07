@@ -7,12 +7,11 @@ from litgraph.mcp.server import MCPServer
 def test_mcp_get_paper_neighbors(project_tmp, monkeypatch):
     monkeypatch.chdir(project_tmp)
     from litgraph.cli.config_manager import init_project, resolve_context
-    from tests.fixtures.extracted_fixtures import FIXTURES, write_fixtures
-    from litgraph.graph.graph_builder import build_graph
+    from tests.fixtures.extracted_fixtures import build_fixture_graph, write_fixtures
 
     init_project(project_tmp)
     write_fixtures(project_tmp / ".litgraph" / "cache" / "extracted")
-    build_graph(resolve_context(project_tmp), FIXTURES)
+    build_fixture_graph(resolve_context(project_tmp))
 
     server = MCPServer(project_tmp)
     resp = server.handle_request({
@@ -42,12 +41,11 @@ def test_mcp_get_paper_neighbors(project_tmp, monkeypatch):
 def test_mcp_related_work_outline(project_tmp, monkeypatch):
     monkeypatch.chdir(project_tmp)
     from litgraph.cli.config_manager import init_project, resolve_context
-    from tests.fixtures.extracted_fixtures import FIXTURES, write_fixtures
-    from litgraph.graph.graph_builder import build_graph
+    from tests.fixtures.extracted_fixtures import build_fixture_graph, write_fixtures
 
     init_project(project_tmp)
     write_fixtures(project_tmp / ".litgraph" / "cache" / "extracted")
-    build_graph(resolve_context(project_tmp), FIXTURES)
+    build_fixture_graph(resolve_context(project_tmp))
 
     server = MCPServer(project_tmp)
     call = server.handle_request({

@@ -14,6 +14,8 @@ from litgraph.mcp.tool_service import MCPToolService
 
 INSTRUCTIONS = (
     "LiteratureGraphContext provides structured literature review over indexed paper PDFs. "
+    "For ambiguous questions, call search_papers first to obtain paper_id and title, then use "
+    "summarize_paper, compare_papers, or expand_paper_graph. "
     "Always cite paper_id, title, page, section, and evidence_text when answering."
 )
 
