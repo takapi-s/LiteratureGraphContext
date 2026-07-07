@@ -1,4 +1,4 @@
-"""Transform LiteratureGraph export JSON into CGC Playground graph format."""
+"""Transform LiteratureGraph export JSON into playground graph format."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _node_size(node_type: str) -> int:
 
 
 def to_playground_graph(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert export_graph_json() output to CGC viewer schema."""
+    """Convert export_graph_json() output to viewer schema."""
     raw_nodes = payload.get("nodes") or []
     raw_edges = payload.get("edges") or []
 

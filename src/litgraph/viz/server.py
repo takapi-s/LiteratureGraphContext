@@ -1,4 +1,4 @@
-"""Local graph visualization server (FastAPI + CGC Playground UI)."""
+"""Local graph visualization server (FastAPI + literature graph UI)."""
 
 from __future__ import annotations
 

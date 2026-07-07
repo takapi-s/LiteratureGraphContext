@@ -13,7 +13,7 @@ body {
 @tailwind components;
 @tailwind utilities;
 
-/* CodeGraphContext Design System - Dark theme with graph-inspired colors */
+/* LiteratureGraphContext Design System - Dark theme with graph-inspired colors */
 
 
 @layer base {
@@ -91,7 +91,7 @@ body {
   }
 
   .light {
-    /* Light mode fallback - CodeGraphContext works best in dark */
+    /* Light mode fallback - LiteratureGraphContext works best in dark */
     --background: 0 0% 95%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;

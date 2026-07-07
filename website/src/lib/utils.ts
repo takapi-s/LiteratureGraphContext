@@ -5,12 +5,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function getOrCreateSessionId(): string {
-  if (typeof window === "undefined") return "global";
-  let sessionId = localStorage.getItem("cgc-session-id");
-  if (!sessionId) {
-    sessionId = Math.random().toString(36).substring(2, 8);
-    localStorage.setItem("cgc-session-id", sessionId);
-  }
-  return sessionId;
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

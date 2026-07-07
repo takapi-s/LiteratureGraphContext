@@ -2,34 +2,22 @@ import ForceGraph2D from "react-force-graph-2d";
 import ForceGraph3D from "react-force-graph-3d";
 import * as THREE from "three";
 import { useCallback, useRef, useState, useEffect, useMemo } from "react";
-import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, ZoomIn, ZoomOut, Maximize, FileCode, Search,
+  ZoomIn, ZoomOut, Maximize, BookOpen, Search,
   Eye, EyeOff, Settings2, Palette, Star,
   ChevronRight, ChevronDown, Folder, FolderOpen,
   PanelLeftClose, PanelLeftOpen,
-  Layers, Check, X, Code2, Sun, Moon, ChevronUp, Route,
-  Download, UploadCloud, Menu, MessageSquare, Copy
+  Layers, Check, X, Sun, Moon, ChevronUp, Route,
+  Download, Menu
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
 import FlowchartSVG from "./FlowchartSVG";
-import { packageCgcBundle, downloadBlob, publishCgcBundle } from "../lib/cgc-exporter";
+import { downloadBlob } from "../lib/utils";
 import { exportSvg } from "../lib/svg-exporter";
 import { packageInteractiveExport } from "../lib/html-exporter";
 import { toast } from "sonner";
-import { getOrCreateSessionId } from "../lib/utils";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "./ui/alert-dialog";
 
 const PALETTE = {
   dark: {
@@ -82,23 +70,6 @@ const DEFAULT_NODE_COLORS: Record<string, string> = {
   Evidence: '#64748b',
   Author: '#94a3b8',
   Venue: '#cbd5e1',
-  Repository: '#ffffff',
-  Directory: '#f59e0b',
-  File: '#42a5f5',
-  Class: '#66bb6a',
-  Interface: '#26a69a',
-  Trait: '#81c784',
-  Function: '#ffca28',
-  Module: '#ef5350',
-  Variable: '#ffa726',
-  Enum: '#7e57c2',
-  Struct: '#5c6bc0',
-  Macro: '#ff7043',
-  Record: '#4db6ac',
-  Union: '#8d6e63',
-  Property: '#dce775',
-  Annotation: '#ec407a',
-  Parameter: '#90a4ae',
   Other: '#78909c',
 };
 
@@ -118,24 +89,16 @@ const DEFAULT_EDGE_COLORS: Record<string, string> = {
   CITES: '#38bdf8',
   CONTRASTS_WITH: '#f97316',
   EXTENDS: '#22d3ee',
-  CONTAINS: '#ffffff',
-  CALLS: '#ab47bc',
-  IMPORTS: '#42a5f5',
-  INHERITS: '#66bb6a',
-  IMPLEMENTS: '#26a69a',
-  INCLUDES: '#81c784',
-  HAS_PARAMETER: '#ffca28',
 };
 
 // ─── Visualization Modes ─────────────────────────────────────────────────────
-type VisualizationMode = 'classic' | 'curvy' | 'icon' | 'neon' | 'galaxy' | 'mermaid' | 'city3d' | 'graph3d';
+type VisualizationMode = 'classic' | 'curvy' | 'icon' | 'neon' | 'galaxy' | 'mermaid' | 'graph3d';
 
 const VISUALIZATION_MODES: { id: VisualizationMode; name: string; description: string; previewColor: string }[] = [
   { id: 'classic', name: 'Classic', description: 'Standard colored circles', previewColor: '#42a5f5' },
   { id: 'curvy', name: 'Curvy 2D', description: 'Smooth Bezier curved edges', previewColor: '#ec407a' },
   { id: 'mermaid', name: 'Flowchart', description: 'SVG diagram with Bezier edges', previewColor: '#26c6da' },
   { id: 'icon', name: 'Icon', description: 'Emoji icons by node type', previewColor: '#ffca28' },
-  { id: 'city3d', name: 'City 3D', description: '3D cityscape with buildings', previewColor: '#ff9800' },
   { id: 'graph3d', name: '3D Graph', description: 'Force-directed 3D with spheres', previewColor: '#42a5f5' },
   { id: 'neon', name: 'Neon Glow', description: 'Cyberpunk neon bloom effect', previewColor: '#00ff88' },
   { id: 'galaxy', name: 'Galaxy', description: 'Orbital rings by connections', previewColor: '#7e57c2' },
@@ -144,11 +107,7 @@ const VISUALIZATION_MODES: { id: VisualizationMode; name: string; description: s
 const EMOJI_MAP: Record<string, string> = {
   Paper: '📄', Method: '🔬', Task: '🎯', Dataset: '🗃️', Metric: '📊',
   Claim: '💡', Contribution: '✨', Limitation: '⚠️', Evidence: '📝',
-  Author: '👤', Venue: '🏛️',
-  Repository: '🌐', Module: '🧩', Directory: '📁', File: '📄',
-  Class: '🏛️', Struct: '🧊', Interface: '🔌', Trait: '🧬',
-  Enum: '🔢', Annotation: '🏷️', Function: '⚙️',
-  Macro: '🔧', Record: '📋', Union: '🔗', Property: '🏠',
+  Author: '👤', Venue: '🏛️', Other: '❓',
 };
 
 // ─── City 3D Island Layout ───────────────────────────────────────────────────
@@ -343,18 +302,7 @@ function TreeItem({
   }
 
   const isSelected = selectedFile === node.path;
-  const ext = node.name.split('.').pop() || '';
-
-  // Map extensions to colors
-  const extColors: Record<string, string> = {
-    py: '#ffca28', ts: '#42a5f5', tsx: '#42a5f5', js: '#f59e0b',
-    jsx: '#f59e0b', rs: '#ef5350', go: '#26a69a', java: '#ef9a9a',
-    c: '#90caf9', h: '#90caf9', cpp: '#7986cb', cs: '#b39ddb',
-    rb: '#ef5350', php: '#9fa8da', swift: '#ffa726', kt: '#ab47bc',
-    scala: '#e91e63', md: '#80cbc4', json: '#a5d6a7', yml: '#80deea',
-    yaml: '#80deea', toml: '#ffcc02', sh: '#a5d6a7',
-  };
-  const dotColor = extColors[ext] || '#78909c';
+  const isPaper = node.path.startsWith('papers/');
 
   return (
     <button
@@ -365,10 +313,11 @@ function TreeItem({
         }`}
       style={{ paddingLeft: `${indent + 20}px` }}
     >
-      <div
-        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-        style={{ backgroundColor: dotColor, boxShadow: isSelected ? `0 0 6px ${dotColor}` : 'none' }}
-      />
+      {isPaper ? (
+        <BookOpen className="w-3.5 h-3.5 flex-shrink-0 text-sky-400" />
+      ) : (
+        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-purple-400" />
+      )}
       <span className="truncate font-medium">{node.name}</span>
     </button>
   );
@@ -418,79 +367,7 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [focusSet, setFocusSet] = useState<{ nodes: Set<number>, links: Set<any> } | null>(null);
   const [simulationReady, setSimulationReady] = useState(false);
-
-  // Publish and Export parameters
-  const { owner, repo } = useParams();
-  const defaultRepoName = data.metadata?.repo || (owner && repo ? `${owner}/${repo}` : "");
-  const [showPublishModal, setShowPublishModal] = useState(false);
-  const [showChatGPTModal, setShowChatGPTModal] = useState(false);
-  const [publishRepo, setPublishRepo] = useState("");
-  const [publishVersion, setPublishVersion] = useState("1.0.0");
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [showWarningAlert, setShowWarningAlert] = useState(false);
-  const [duplicateBundle, setDuplicateBundle] = useState<any | null>(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-
-  // Dynamic ChatGPT Connection URL with pre-filled version-scoped query
-  const metadata = data.metadata || {};
-  const repoName = metadata.repo || (owner && repo ? `${owner}/${repo}` : "playground");
-  const branchName = metadata.branch || "main";
-  const commitSha = metadata.commit || "latest";
-  const cleanCommit = commitSha.length === 40 && /^[0-9a-fA-F]+$/.test(commitSha) ? commitSha.substring(0, 7) : commitSha;
-
-  // Standardized bundle/repository naming format we designed: owner__repo__branch__commit
-  const [ownerPart, repoPart] = repoName.includes('/') ? repoName.split('/') : [owner || repoName, repo || ''];
-  const cleanOwner = String(ownerPart).trim();
-  const cleanRepo = String(repoPart).trim();
-  const designedRepoName = cleanOwner && cleanRepo 
-    ? `${cleanOwner}__${cleanRepo}__${branchName}__${cleanCommit}` 
-    : repoName;
-
-  const userId = getOrCreateSessionId();
-  const chatgptPreFillPrompt = `Let's connect to codegraphcontext session: ${userId}`;
-  const chatgptUrl = "https://chatgpt.com/g/g-6a1368599210819199a1c47d021020b6-codegraphcontext";
-
-  const handleConnectChatGPT = () => {
-    setShowChatGPTModal(true);
-  };
-
-  const handleCopyAndLaunchChatGPT = () => {
-    navigator.clipboard.writeText(chatgptPreFillPrompt)
-      .then(() => {
-        toast.success("Prompt copied to clipboard!", {
-          icon: "📋",
-        });
-      })
-      .catch((err) => {
-        console.warn("Failed to auto-copy prompt:", err);
-      });
-    window.open(chatgptUrl, "_blank", "noopener,noreferrer");
-    setShowChatGPTModal(false);
-  };
-
-  const handleExport = async () => {
-    try {
-      const repoName = data.metadata?.repo || "unknown/code-graph";
-      let filename = "";
-      if (repoName.includes('/')) {
-        const owner = repoName.split('/')[0];
-        const repo = repoName.split('/')[1];
-        const branch = data.metadata?.branch || "main";
-        const commit = data.metadata?.commit || data.metadata?.version || "latest";
-        const cleanCommit = commit.length === 40 && /^[0-9a-fA-F]+$/.test(commit) ? commit.substring(0, 7) : commit;
-        filename = `${owner}__${repo}__${branch}__${cleanCommit}.cgc`;
-      } else {
-        filename = `${repoName}.cgc`;
-      }
-      
-      const blob = await packageCgcBundle(repoName, data.nodes, data.links, data.metadata?.version || "1.0.0", data.metadata);
-      downloadBlob(blob, filename);
-      toast.success("CGC bundle exported successfully!");
-    } catch (err: any) {
-      console.error(err);
-      toast.error("Failed to export bundle: " + err.message);
-    }
-  };
 
   const handleSvgExport = async () => {
     try {
@@ -514,16 +391,16 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
 
   const handleHtmlExport = async () => {
     try {
-      let filename = "interactive-graph.zip";
-      if (data.metadata?.repo) {
-         filename = `${data.metadata.repo.replace(/\//g, '_')}_interactive.zip`;
+      let filename = "literature-graph-interactive.zip";
+      if (data.metadata?.papers_dir) {
+        filename = `${String(data.metadata.papers_dir).replace(/[\\/]/g, '_')}_interactive.zip`;
       }
-      
+
       const exportMode = graphMode === 'mermaid' ? 'mermaid' : 'classic';
       const blob = await packageInteractiveExport(
-        filteredData.nodes, 
-        filteredData.links, 
-        data.metadata || {}, 
+        filteredData.nodes,
+        filteredData.links,
+        data.metadata || {},
         nodeColors,
         edgeColors,
         exportMode
@@ -535,108 +412,27 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
     }
   };
 
-  const executePublishFlow = async () => {
-    setIsPublishing(true);
-    try {
-      const blob = await packageCgcBundle(publishRepo, data.nodes, data.links, publishVersion, data.metadata);
-      const result = await publishCgcBundle(blob, publishRepo, publishVersion);
-      if (result.success) {
-        toast.success(`Successfully published ${publishRepo} (v${publishVersion}) to the registry!`);
-        setShowPublishModal(false);
-      } else {
-        toast.error(result.message || "Failed to publish bundle.");
-      }
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "An error occurred during publishing.");
-    } finally {
-      setIsPublishing(false);
-    }
-  };
-
-  const handlePublishSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!publishRepo || !publishRepo.includes("/")) {
-      toast.error("Invalid repository name. Expected 'owner/repo' format.");
-      return;
-    }
-    
-    // Check if this repository and commit/branch is already pre-indexed in the manifest
-    const commitSha = data.metadata?.commit || "";
-    if (commitSha) {
-      setIsPublishing(true);
-      try {
-        console.log(`[Publish] Checking if ${publishRepo} at commit ${commitSha} is already pre-indexed...`);
-        const manifestRes = await fetch('/api/bundles');
-        if (manifestRes.ok) {
-          const manifestData = await manifestRes.json();
-          const bundles = manifestData.bundles || [];
-          
-          const match = bundles.find((b: any) => {
-            const sameRepo = b.repo && b.repo.toLowerCase() === publishRepo.toLowerCase();
-            
-            // The commit SHA can be stored in either b.commit or b.version (e.g. Hugging Face manifest)
-            const targetCommit = (b.commit || b.version || "").toLowerCase();
-            const currentCommit = commitSha.toLowerCase();
-            
-            const sameCommit = targetCommit && (
-              currentCommit === targetCommit ||
-              currentCommit.startsWith(targetCommit) ||
-              targetCommit.startsWith(currentCommit)
-            );
-            
-            return sameRepo && sameCommit;
-          });
-
-          if (match) {
-            console.log("[Publish] Matching pre-indexed bundle found, showing custom alert dialog:", match);
-            setDuplicateBundle(match);
-            setIsPublishing(false);
-            setShowWarningAlert(true);
-            return;
-          }
-        }
-      } catch (manifestErr) {
-        console.warn("[Publish] Failed to fetch or check pre-indexed repos manifest:", manifestErr);
-      } finally {
-        setIsPublishing(false);
-      }
-    }
-
-    await executePublishFlow();
-  };
-
   // Path traversal states
   const [isPathMode, setIsPathMode] = useState(false);
   const [pathSource, setPathSource] = useState<any>(null);
   const [pathTarget, setPathTarget] = useState<any>(null);
   const [pathError, setPathError] = useState<string | null>(null);
 
-  // Code viewer state
-  const [codeContent, setCodeContent] = useState<string | null>(null);
-  const [codeError, setCodeError] = useState<string | null>(null);
-  const [codePanelWidth, setCodePanelWidth] = useState(420);
-  const [codePanelTab, setCodePanelTab] = useState<'code' | 'entities'>('code');
-  const [highlightLine, setHighlightLine] = useState<number | null>(null);
-  const isCodeResizing = useRef(false);
-  const codeResizeStartX = useRef(0);
-  const codeResizeStartW = useRef(420);
-  const codeBodyRef = useRef<HTMLDivElement>(null);
+  // Entity detail panel state
+  const [detailPanelWidth, setDetailPanelWidth] = useState(420);
+  const isDetailResizing = useRef(false);
+  const detailResizeStartX = useRef(0);
+  const detailResizeStartW = useRef(420);
 
   // Legend collapsible state
   const [legendCollapsed, setLegendCollapsed] = useState(() => window.innerWidth < 1024);
 
-  const fileContents: Record<string, string> = data.fileContents || {};
-
   // LEGEND & CONFIG STATE
   const [nodeColors, setNodeColors] = useState(DEFAULT_NODE_COLORS);
   const [edgeColors, setEdgeColors] = useState(DEFAULT_EDGE_COLORS);
-  const [visibleNodeTypes, setVisibleNodeTypes] = useState<Set<string>>(() => {
-    const all = new Set(Object.keys(DEFAULT_NODE_COLORS));
-    all.delete('Variable');
-    all.delete('Parameter');
-    return all;
-  });
+  const [visibleNodeTypes, setVisibleNodeTypes] = useState<Set<string>>(
+    () => new Set(Object.keys(DEFAULT_NODE_COLORS))
+  );
   const [showConfig, setShowConfig] = useState(false);
   const [lineWidth, setLineWidth] = useState(0.24);
   const [nodeSize, setNodeSize] = useState(3.0);
@@ -1187,64 +983,38 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
     return { nodes: fixedNodes, links: [] as any[] };
   }, [graphMode, filteredData, fileTree, degreeMap, nodeSize, edgeColors, isDark]);
 
-  const loadFileCode = useCallback((path: string) => {
-    const content = fileContents[path];
-    if (content != null) {
-      setCodeContent(content);
-      setCodeError(null);
-      setCodePanelTab('code');
-    } else {
-      setCodeContent(null);
-      setCodeError('Source not available');
-      setCodePanelTab('entities');
-    }
-  }, [fileContents]);
-
-  const onFileClick = (path: string | null, targetLine?: number) => {
+  const onFileClick = (path: string | null) => {
     if (!path) {
       setSelectedFile(null);
       setFocusSet(null);
-      setCodeContent(null);
-      setCodeError(null);
-      setHighlightLine(null);
       return;
     }
 
-    setHighlightLine(targetLine || null);
+    setSelectedFile(path);
 
-    if (path !== selectedFile) {
-      setSelectedFile(path);
-      loadFileCode(path);
-    } else if (targetLine) {
-      setCodePanelTab('code');
-      setTimeout(() => {
-        const el = codeBodyRef.current?.querySelector(`[data-line="${targetLine}"]`);
-        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
-    }
+    const paperNodes = data.nodes.filter((n: any) => n.file === path);
+    if (paperNodes.length === 0) return;
 
-    const fileNode = data.nodes.find((n: any) => n.file === path && n.type === 'File');
-    if (fileNode) {
-      if (fgRef.current) {
-        fgRef.current.centerAt(fileNode.x, fileNode.y, 800);
-        fgRef.current.zoom(2.5, 800);
+    const nodesInFocus = new Set<number>();
+    const linksInFocus = new Set<any>();
+    paperNodes.forEach((n: any) => nodesInFocus.add(n.id));
+
+    data.links.forEach((l: any) => {
+      const sId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tId = typeof l.target === 'object' ? l.target.id : l.target;
+      if (nodesInFocus.has(sId) || nodesInFocus.has(tId)) {
+        nodesInFocus.add(sId);
+        nodesInFocus.add(tId);
+        linksInFocus.add(l);
       }
+    });
 
-      const nodesInFocus = new Set<number>();
-      const linksInFocus = new Set<any>();
-      nodesInFocus.add(fileNode.id);
+    setFocusSet({ nodes: nodesInFocus, links: linksInFocus });
 
-      data.links.forEach((l: any) => {
-        const sId = typeof l.source === 'object' ? l.source.id : l.source;
-        const tId = typeof l.target === 'object' ? l.target.id : l.target;
-        if (sId === fileNode.id || tId === fileNode.id) {
-          nodesInFocus.add(sId);
-          nodesInFocus.add(tId);
-          linksInFocus.add(l);
-        }
-      });
-
-      setFocusSet({ nodes: nodesInFocus, links: linksInFocus });
+    const anchor = paperNodes.find((n: any) => n.type === 'Paper') || paperNodes[0];
+    if (fgRef.current && anchor?.x !== undefined) {
+      fgRef.current.centerAt(anchor.x, anchor.y, 800);
+      fgRef.current.zoom(2, 800);
     }
   };
 
@@ -1261,38 +1031,28 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
       }
       return;
     }
-    const filePath = node.file || node.properties?.path || node.properties?.file;
+    const filePath = node.file || node.properties?.paper_id;
     if (!filePath) return;
-    const lineNum = node.line_number ?? node.properties?.line_number;
-    onFileClick(filePath, lineNum ? Number(lineNum) : undefined);
+    onFileClick(node.file || `papers/${filePath}`);
   };
-
-  useEffect(() => {
-    if (highlightLine && codeContent && codePanelTab === 'code') {
-      setTimeout(() => {
-        const el = codeBodyRef.current?.querySelector(`[data-line="${highlightLine}"]`);
-        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 150);
-    }
-  }, [highlightLine, codeContent, codePanelTab]);
 
   const fileEntities = useMemo(() => {
     if (!selectedFile) return [];
-    return data.nodes.filter((n: any) => n.file === selectedFile && n.type !== 'File');
+    return data.nodes.filter((n: any) => n.file === selectedFile);
   }, [data.nodes, selectedFile]);
 
-  const onCodeDragStart = (e: React.MouseEvent) => {
+  const onDetailDragStart = (e: React.MouseEvent) => {
     e.preventDefault();
-    isCodeResizing.current = true;
-    codeResizeStartX.current = e.clientX;
-    codeResizeStartW.current = codePanelWidth;
+    isDetailResizing.current = true;
+    detailResizeStartX.current = e.clientX;
+    detailResizeStartW.current = detailPanelWidth;
     const onMove = (ev: MouseEvent) => {
-      if (!isCodeResizing.current) return;
-      const delta = codeResizeStartX.current - ev.clientX;
-      setCodePanelWidth(Math.min(800, Math.max(280, codeResizeStartW.current + delta)));
+      if (!isDetailResizing.current) return;
+      const delta = detailResizeStartX.current - ev.clientX;
+      setDetailPanelWidth(Math.min(800, Math.max(280, detailResizeStartW.current + delta)));
     };
     const onUp = () => {
-      isCodeResizing.current = false;
+      isDetailResizing.current = false;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
@@ -1393,7 +1153,7 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
   }, [focusSet, edgeColors, graphMode]);
 
   const effectiveSidebarW = (collapsed || dimensions.width < 768) ? 0 : sidebarWidth;
-  const effectiveCodePanelW = (selectedFile === null || dimensions.width < 768) ? 0 : codePanelWidth;
+  const effectiveDetailPanelW = (selectedFile === null || dimensions.width < 768) ? 0 : detailPanelWidth;
 
   return (
     <motion.div
@@ -1427,19 +1187,10 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
             >
               {/* Header */}
               <div className="px-4 pt-4 pb-2 flex-shrink-0">
-                <Button
-                  onClick={() => window.location.href = "/"}
-                  variant="ghost"
-                  className={`w-full justify-start mb-4 rounded-xl transition-colors text-sm ${isDark ? 'text-gray-400 hover:text-white hover:bg-purple-500/10 border border-white/5' : 'text-gray-600 hover:text-black hover:bg-black/5 border border-black/10'}`}
-                >
-                  <X className="w-4 h-4 mr-2 text-red-400" />
-                  Exit to Homepage
-                </Button>
-
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-sm font-bold flex items-center gap-2 tracking-tight uppercase" style={{ color: pal.text }}>
-                    <FileCode className="w-4 h-4 text-purple-400" />
-                    Project Tree
+                    <BookOpen className="w-4 h-4 text-purple-400" />
+                    Papers
                   </h2>
                   <div className="flex items-center gap-1">
                     <button
@@ -1476,7 +1227,7 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
                   <input
                     type="text"
-                    placeholder="Filter files..."
+                    placeholder="Filter papers..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className={`w-full rounded-lg py-1.5 pl-9 pr-3 text-[13px] focus:outline-none focus:ring-1 focus:ring-purple-500/50 transition-all ${isDark ? 'bg-white/5 border border-white/8 text-white placeholder:text-gray-600' : 'bg-black/5 border border-black/10 text-gray-900 placeholder:text-gray-400'}`}
@@ -1715,48 +1466,10 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
                         <span className="text-[10px] text-gray-500 font-normal">High-res 2D snapshot</span>
                       </div>
                     </button>
-
-                    {/* Export CGC Button */}
-                    <button
-                      onClick={() => { handleExport(); setShowExportMenu(false); }}
-                      className={`flex items-center gap-3 px-4 py-2.5 transition-all cursor-pointer text-left w-full ${isDark ? 'hover:bg-purple-500/10 text-white' : 'hover:bg-black/5 text-gray-800'}`}
-                      title="Download code graph as a .cgc file"
-                    >
-                      <Download className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="text-[12px] font-bold">CGC Bundle</span>
-                        <span className="text-[10px] text-gray-500 font-normal">Raw graph context bundle</span>
-                      </div>
-                    </button>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
-
-            {/* Publish Button */}
-            <button
-              onClick={() => {
-                setPublishRepo(defaultRepoName);
-                setPublishVersion(data.metadata?.version || "1.0.0");
-                setShowPublishModal(true);
-              }}
-              className={`flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold px-4 py-2 border rounded-full transition-all backdrop-blur-md shadow-2xl cursor-pointer ${isDark ? 'bg-black/40 hover:bg-purple-500/20 text-white border-white/10' : 'bg-white/80 hover:bg-white text-gray-800 border-black/10'}`}
-              title="Publish this graph to the public registry"
-            >
-              <UploadCloud className="w-3.5 h-3.5 text-green-400" />
-              Publish
-            </button>
-
-            {/* ChatGPT Tunnel Button */}
-            <button
-              onClick={handleConnectChatGPT}
-              className={`flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold px-4 py-2 border rounded-full transition-all backdrop-blur-md shadow-2xl cursor-pointer ${isDark ? 'bg-black/40 hover:bg-purple-500/20 text-white border-white/10' : 'bg-white/80 hover:bg-white text-gray-800 border-black/10'}`}
-              title="Open the CGC ChatGPT GPT. Keep this cgc.codes tab focused (not behind ChatGPT) so the signaling tunnel stays online."
-            >
-              <div className="w-2 h-2 rounded-full bg-amber-500/80 shadow-[0_0_6px_#f59e0b]" title="Tunnel status is not shown here — keep this tab active while using ChatGPT" />
-              <MessageSquare className="w-3.5 h-3.5 text-purple-400" />
-              ChatGPT
-            </button>
 
             {/* Mode Selector Dropdown */}
             <div ref={modeMenuRef} className="relative">
@@ -1805,17 +1518,14 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
             </div>
 
             <a
-              href="https://github.com/CodeGraphContext/CodeGraphContext"
+              href="https://github.com/takapi-s/LiteratureGraphContext"
               target="_blank"
               rel="noopener noreferrer"
               className={`flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold px-4 py-2 border rounded-full transition-all backdrop-blur-md shadow-2xl ${isDark ? 'bg-black/40 hover:bg-purple-500/20 text-white border-white/10' : 'bg-white/80 hover:bg-white text-gray-800 border-black/10'}`}
             >
               <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
-              Star on GitHub
+              LiteratureGraphContext
             </a>
-            <div className={`text-[11px] uppercase tracking-widest font-bold px-4 py-2 border rounded-full backdrop-blur-md shadow-2xl ${isDark ? 'bg-black/40 text-gray-400 border-white/10' : 'bg-white/80 text-gray-500 border-black/10'}`}>
-              Made by <a href="https://github.com/shashankss1205" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 transition-colors">shashankss1205</a>
-            </div>
           </div>
 
           {/* Mobile Hamburger Menu Toggle */}
@@ -1856,42 +1566,6 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
                   Export SVG
                 </button>
 
-                {/* Mobile Export */}
-                <button
-                  onClick={() => { handleExport(); setShowMobileMenu(false); }}
-                  className={`flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold px-4 py-2 border rounded-xl transition-all cursor-pointer text-left w-full ${isDark ? 'hover:bg-purple-500/10 border-white/5 text-white' : 'hover:bg-black/5 border-black/5 text-gray-800'}`}
-                >
-                  <Download className="w-3.5 h-3.5 text-purple-400" />
-                  Export CGC
-                </button>
-
-                {/* Mobile Publish */}
-                <button
-                  onClick={() => {
-                    setPublishRepo(defaultRepoName);
-                    setPublishVersion(data.metadata?.version || "1.0.0");
-                    setShowPublishModal(true);
-                    setShowMobileMenu(false);
-                  }}
-                  className={`flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold px-4 py-2 border rounded-xl transition-all cursor-pointer text-left w-full ${isDark ? 'hover:bg-purple-500/10 border-white/5 text-white' : 'hover:bg-black/5 border-black/5 text-gray-800'}`}
-                >
-                  <UploadCloud className="w-3.5 h-3.5 text-green-400" />
-                  Publish Graph
-                </button>
-
-                {/* Mobile ChatGPT Tunnel */}
-                <button
-                  onClick={() => {
-                    handleConnectChatGPT();
-                    setShowMobileMenu(false);
-                  }}
-                  className={`flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold px-4 py-2 border rounded-xl transition-all text-left w-full ${isDark ? 'hover:bg-purple-500/10 border-white/5 text-white' : 'hover:bg-black/5 border-black/5 text-gray-800'}`}
-                >
-                  <div className="w-2 h-2 rounded-full bg-amber-500/80 shadow-[0_0_6px_#f59e0b]" />
-                  <MessageSquare className="w-3.5 h-3.5 text-purple-400" />
-                  ChatGPT Tunnel
-                </button>
-
                 {/* Mobile Mode Selector */}
                 <div className="border-t border-white/5 my-0.5" />
                 <div className="px-2 text-[8px] uppercase tracking-widest font-bold text-gray-500">Visualization Mode</div>
@@ -1915,20 +1589,15 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
                 {/* Mobile Star */}
                 <div className="border-t border-white/5 my-0.5" />
                 <a
-                  href="https://github.com/CodeGraphContext/CodeGraphContext"
+                  href="https://github.com/takapi-s/LiteratureGraphContext"
                   target="_blank"
                   rel="noopener noreferrer"
                   className={`flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold px-4 py-2 border rounded-xl transition-all ${isDark ? 'hover:bg-purple-500/10 border-white/5 text-white' : 'hover:bg-black/5 border-black/5 text-gray-850'}`}
                   onClick={() => setShowMobileMenu(false)}
                 >
                   <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
-                  Star on GitHub
+                  LiteratureGraphContext
                 </a>
-
-                {/* Mobile Made By */}
-                <div className="text-[9px] uppercase tracking-widest text-center mt-1 text-gray-500 py-1 border-t border-white/5">
-                  Made by <a href="https://github.com/shashankss1205" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 font-bold transition-colors">shashankss1205</a>
-                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -1957,50 +1626,11 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
           </AnimatePresence>
         </div>
 
-        {graphMode === 'city3d' ? (
-          <>
-            <ForceGraph3D
-              ref={fgRef}
-              graphData={city3dData}
-              width={dimensions.width - effectiveSidebarW - effectiveCodePanelW}
-              height={dimensions.height}
-              backgroundColor={pal.canvasBg}
-              nodeThreeObject={cityNodeThreeObject}
-              nodeThreeObjectExtend={false}
-              nodeLabel={(n: any) => `${n.type}: ${n.name}`}
-              linkVisibility={false}
-              onNodeClick={onGraphNodeClick}
-              onBackgroundClick={() => onFileClick(null)}
-              onNodeHover={setHoverNode}
-              d3VelocityDecay={0.9}
-              d3AlphaDecay={0.1}
-              cooldownTicks={0}
-              warmupTicks={0}
-            />
-            {/* Navigation controls overlay */}
-            <div
-              className="absolute bottom-6 right-6 z-[60] rounded-xl px-5 py-4 text-[11px] font-mono select-none pointer-events-none"
-              style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)', border: `1px solid ${pal.border}`, backdropFilter: 'blur(8px)' }}
-            >
-              <div className="text-[10px] font-black uppercase tracking-[0.15em] mb-3" style={{ color: pal.mutedText }}>Navigation Controls</div>
-              {[
-                ['Orbit / Look', 'L-Click Drag'],
-                ['Zoom', 'Scroll'],
-                ['Isolate Node', 'Click Building'],
-                ['Reset View', 'Click Void'],
-              ].map(([label, key]) => (
-                <div key={label} className="flex items-center justify-between gap-6 py-[3px]">
-                  <span style={{ color: pal.dimText }}>{label}</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)', color: pal.text }}>{key}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : graphMode === 'graph3d' ? (
+        {graphMode === 'graph3d' ? (
           <ForceGraph3D
             ref={fgRef}
             graphData={filteredData}
-            width={dimensions.width - effectiveSidebarW - effectiveCodePanelW}
+            width={dimensions.width - effectiveSidebarW - effectiveDetailPanelW}
             height={dimensions.height}
             backgroundColor={pal.canvasBg}
             nodeThreeObject={graph3dNodeThreeObject}
@@ -2026,7 +1656,7 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
         ) : graphMode === 'mermaid' ? (
           <FlowchartSVG
             data={filteredData}
-            width={dimensions.width - effectiveSidebarW - effectiveCodePanelW}
+            width={dimensions.width - effectiveSidebarW - effectiveDetailPanelW}
             height={dimensions.height}
             nodeColors={nodeColors}
             edgeColors={edgeColors}
@@ -2037,7 +1667,7 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
             ref={fgRef}
             onEngineStop={() => setSimulationReady(true)}
             graphData={filteredData}
-            width={dimensions.width - effectiveSidebarW - effectiveCodePanelW}
+            width={dimensions.width - effectiveSidebarW - effectiveDetailPanelW}
             height={dimensions.height}
             nodeLabel={(n: any) => {
               let label = `${n.type}: ${n.name}`;
@@ -2084,7 +1714,7 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
         {!showConfig && (
           <div
             className="absolute bottom-6 z-[60] flex flex-col gap-4 pointer-events-none items-end max-w-xs md:max-w-sm"
-            style={{ right: (selectedFile && dimensions.width >= 768) ? codePanelWidth + 24 : 24 }}
+            style={{ right: (selectedFile && dimensions.width >= 768) ? detailPanelWidth + 24 : 24 }}
           >
             {/* Legend Overlay */}
             <div
@@ -2133,7 +1763,7 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
         )}
       </div>
 
-      {/* ── CODE VIEWER PANEL ── */}
+      {/* ── PAPER DETAIL PANEL ── */}
       <AnimatePresence>
         {selectedFile && (
           <>
@@ -2144,18 +1774,17 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
               />
             )}
             <motion.div
-              key="code-panel"
+              key="detail-panel"
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: dimensions.width < 768 ? Math.min(codePanelWidth, dimensions.width * 0.85) : codePanelWidth, opacity: 1 }}
+              animate={{ width: dimensions.width < 768 ? Math.min(detailPanelWidth, dimensions.width * 0.85) : detailPanelWidth, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
               className={`h-full flex-shrink-0 flex z-[90] shadow-2xl overflow-hidden ${dimensions.width < 768 ? 'absolute right-0 top-0' : 'relative'}`}
               style={{ backgroundColor: pal.panelBg, borderLeft: `1px solid ${pal.border}` }}
             >
-              {/* drag handle (left edge) */}
               {dimensions.width >= 768 && (
                 <div
-                  onMouseDown={onCodeDragStart}
+                  onMouseDown={onDetailDragStart}
                   className="absolute left-0 top-0 h-full w-1 cursor-col-resize z-[80] group flex items-center justify-center"
                 >
                   <div className="w-0.5 h-full bg-white/5 group-hover:bg-purple-500/50 transition-colors duration-150" />
@@ -2163,10 +1792,9 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
               )}
 
               <div className="flex flex-col w-full overflow-hidden">
-                {/* header */}
                 <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: `1px solid ${pal.border}` }}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <Code2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                    <BookOpen className="w-4 h-4 text-purple-400 flex-shrink-0" />
                     <span className="text-[13px] font-bold truncate" style={{ color: pal.text }}>
                       {selectedFile.split('/').pop()}
                     </span>
@@ -2179,100 +1807,48 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
                   </button>
                 </div>
 
-                {/* path breadcrumb + tabs */}
-                <div className="flex items-center gap-0 px-4 py-0 text-[10px] font-mono flex-shrink-0" style={{ borderBottom: `1px solid ${pal.border}` }}>
-                  <span className="text-gray-500 truncate flex-1 py-1.5">{selectedFile}</span>
-                  <div className="flex ml-2 flex-shrink-0">
-                    <button
-                      onClick={() => setCodePanelTab('code')}
-                      className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${codePanelTab === 'code' ? 'text-purple-400 border-b-2 border-purple-400' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`}
-                    >
-                      Code
-                    </button>
-                    <button
-                      onClick={() => setCodePanelTab('entities')}
-                      className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${codePanelTab === 'entities' ? 'text-purple-400 border-b-2 border-purple-400' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`}
-                    >
-                      Entities
-                    </button>
+                <div className="px-4 py-2 text-[10px] font-mono flex-shrink-0 text-gray-500 truncate" style={{ borderBottom: `1px solid ${pal.border}` }}>
+                  {selectedFile}
+                </div>
+
+                <div className="flex-1 overflow-auto custom-scrollbar p-4">
+                  <div className="space-y-2">
+                    {fileEntities.map((n: any) => {
+                      const page = n.properties?.page;
+                      const section = n.properties?.section;
+                      const evidence = n.properties?.evidence_text;
+                      return (
+                        <div
+                          key={n.id}
+                          className={`rounded-lg p-2.5 ${isDark ? 'hover:bg-purple-500/10' : 'hover:bg-black/5'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {graphMode === 'icon' ? (
+                              <span className="text-[14px] flex-shrink-0">{EMOJI_MAP[n.type] || '❓'}</span>
+                            ) : (
+                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: nodeColors[n.type] || '#78909c' }} />
+                            )}
+                            <span className="text-[12px] font-medium truncate" style={{ color: pal.textSecondary }}>{n.name}</span>
+                            <span className="text-[9px] uppercase tracking-wider ml-auto flex-shrink-0" style={{ color: pal.dimText }}>
+                              {n.type}
+                            </span>
+                          </div>
+                          {(page || section) && (
+                            <div className="mt-1 px-1 text-[9px] text-gray-500">
+                              {[section, page ? `p.${page}` : null].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
+                          {evidence && (
+                            <div className="mt-1 px-1 text-[10px] text-gray-400 line-clamp-3 italic">
+                              "{evidence}"
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* body */}
-                <div ref={codeBodyRef} className="flex-1 overflow-auto custom-scrollbar">
-                  {codePanelTab === 'code' ? (
-                    codeContent !== null ? (
-                      <pre className={`p-4 text-[12px] leading-[1.65] font-mono whitespace-pre overflow-x-auto ${isDark ? 'text-gray-300' : 'text-gray-800'}`}>
-                        {codeContent.split('\n').map((line, i) => {
-                          const lineNum = i + 1;
-                          const isHL = highlightLine === lineNum;
-                          return (
-                            <div
-                              key={i}
-                              data-line={lineNum}
-                              className={`flex ${isHL ? (isDark ? 'bg-yellow-400/10' : 'bg-yellow-300/20') : (isDark ? 'hover:bg-white/[0.03]' : 'hover:bg-black/[0.03]')}`}
-                            >
-                              <span className={`inline-block w-10 text-right pr-4 select-none flex-shrink-0 ${isHL ? 'text-yellow-400 font-bold' : (isDark ? 'text-gray-600' : 'text-gray-400')}`}>{lineNum}</span>
-                              <span>{line || ' '}</span>
-                            </div>
-                          );
-                        })}
-                      </pre>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-40 text-gray-500 text-[12px]">
-                        <p>{codeError || 'No source available'}</p>
-                      </div>
-                    )
-                  ) : (
-                    <div className="p-4">
-                      <div className="space-y-1">
-                        {fileEntities.map((n: any) => {
-                          const lineNum = n.line_number ?? n.properties?.line_number;
-                          return (
-                            <>
-                              <div
-                                key={n.id}
-                                onClick={() => { if (lineNum && codeContent) { setHighlightLine(Number(lineNum)); setCodePanelTab('code'); } }}
-                                className={`flex items-center gap-2 py-1.5 px-2 rounded-lg ${isDark ? 'hover:bg-purple-500/10' : 'hover:bg-black/5'} ${lineNum && codeContent ? 'cursor-pointer' : ''}`}
-                              >
-                                {graphMode === 'icon' ? (
-                                  <span className="text-[14px] flex-shrink-0">{EMOJI_MAP[n.type] || '❓'}</span>
-                                ) : (
-                                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: nodeColors[n.type] || '#78909c' }} />
-                                )}
-                                <span className="text-[12px] font-medium truncate" style={{ color: pal.textSecondary }}>{n.name}</span>
-                                <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
-                                  {n.complexity && (
-                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${n.complexity > 10 ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>
-                                      C:{n.complexity}
-                                    </span>
-                                  )}
-                                  <span className="text-[9px] uppercase tracking-wider" style={{ color: pal.dimText }}>
-                                    {n.type}{lineNum ? `:${lineNum}` : ''}
-                                  </span>
-                                </div>
-                              </div>
-                              {n.decorators?.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mt-1 px-2">
-                                  {n.decorators.map((d: string, i: number) => (
-                                    <span key={i} className="text-[8px] px-1 py-0.5 rounded bg-purple-500/10 text-purple-400 font-mono">@{d.replace(/^@/, '')}</span>
-                                  ))}
-                                </div>
-                              )}
-                              {n.docstring && (
-                                <div className="mt-1 px-2 text-[9px] text-gray-500 line-clamp-2 italic">
-                                  "{n.docstring}"
-                                </div>
-                              )}
-                            </>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* footer */}
                 <div className={`px-4 py-2 text-[10px] text-gray-500 uppercase tracking-widest font-black flex-shrink-0 ${isDark ? 'border-t border-white/5 bg-black/40' : 'border-t border-black/5 bg-gray-50'}`}>
                   {fileEntities.length} entities
                 </div>
@@ -2281,255 +1857,6 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
           </>
         )}
       </AnimatePresence>
-
-      {/* ── PUBLISH MODAL ── */}
-      <AnimatePresence>
-        {showPublishModal && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !isPublishing && setShowPublishModal(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-md"
-            />
-
-            {/* Dialog Panel */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className={`relative w-full max-w-md p-6 rounded-3xl shadow-2xl border backdrop-blur-2xl overflow-hidden ${
-                isDark 
-                  ? "bg-zinc-950/80 border-zinc-800 text-white" 
-                  : "bg-white/90 border-zinc-200 text-zinc-900"
-              }`}
-            >
-              {/* Subtle top glow bar */}
-              <div className="absolute top-0 left-0 right-0 h-1 bg-white" />
-
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h3 className="text-lg font-bold tracking-tight">Publish Code Graph</h3>
-                  <p className={`text-xs mt-1 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                    Register this bundle in the public search index.
-                  </p>
-                </div>
-                <button
-                  disabled={isPublishing}
-                  onClick={() => setShowPublishModal(false)}
-                  className={`p-1.5 rounded-full transition-colors ${
-                    isDark ? "hover:bg-purple-500/20 text-zinc-400 hover:text-white" : "hover:bg-zinc-100 text-zinc-500 hover:text-zinc-950"
-                  }`}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <form onSubmit={handlePublishSubmit} className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 block">
-                    GitHub Repository
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    disabled={isPublishing}
-                    value={publishRepo}
-                    onChange={(e) => setPublishRepo(e.target.value)}
-                    placeholder="e.g. owner/repository"
-                    className={`w-full px-3 py-2 text-sm rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all ${
-                      isDark 
-                        ? "bg-zinc-900 border-zinc-800 text-white placeholder-zinc-600 focus:border-zinc-700" 
-                        : "bg-zinc-50 border-zinc-200 text-zinc-950 placeholder-zinc-400 focus:border-zinc-300"
-                    }`}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 block">
-                    Version
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    disabled={isPublishing}
-                    value={publishVersion}
-                    onChange={(e) => setPublishVersion(e.target.value)}
-                    placeholder="e.g. 1.0.0"
-                    className={`w-full px-3 py-2 text-sm rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all ${
-                      isDark 
-                        ? "bg-zinc-900 border-zinc-800 text-white placeholder-zinc-600 focus:border-zinc-700" 
-                        : "bg-zinc-50 border-zinc-200 text-zinc-950 placeholder-zinc-400 focus:border-zinc-300"
-                    }`}
-                  />
-                </div>
-
-                <div className="pt-4 flex gap-3">
-                  <Button
-                    type="button"
-                    disabled={isPublishing}
-                    variant="outline"
-                    onClick={() => setShowPublishModal(false)}
-                    className="w-full rounded-xl"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={isPublishing}
-                    className="w-full rounded-xl bg-purple-600 text-white hover:bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.4)]"
-                  >
-                    {isPublishing ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Publishing...
-                      </span>
-                    ) : (
-                      "Publish"
-                    )}
-                  </Button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ── CHATGPT CONNECTION INSTRUCTION MODAL ── */}
-      <AnimatePresence>
-        {showChatGPTModal && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowChatGPTModal(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-md"
-            />
-
-            {/* Dialog Panel */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className={`relative w-full max-w-md p-6 rounded-3xl shadow-2xl border backdrop-blur-2xl overflow-hidden ${
-                isDark 
-                  ? "bg-zinc-950/80 border-zinc-800 text-white" 
-                  : "bg-white/90 border-zinc-200 text-zinc-900"
-              }`}
-            >
-              {/* Subtle top glow bar */}
-              <div className="absolute top-0 left-0 right-0 h-1 bg-white" />
-
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h3 className="text-lg font-bold tracking-tight flex items-center gap-2">
-                    <MessageSquare className="w-5 h-5 text-purple-400" />
-                    Connect to ChatGPT GPT
-                  </h3>
-                  <p className={`text-xs mt-1 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                    To link ChatGPT to this browser tunnel, you need to paste a setup prompt.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowChatGPTModal(false)}
-                  className={`p-1.5 rounded-full transition-colors ${
-                    isDark ? "hover:bg-purple-500/20 text-zinc-400 hover:text-white" : "hover:bg-zinc-100 text-zinc-500 hover:text-zinc-950"
-                  }`}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 block">
-                    Connection Prompt (Auto-copied on Launch)
-                  </label>
-                  <div className={`relative p-3 rounded-xl border font-mono text-xs flex justify-between items-center ${
-                    isDark ? "bg-zinc-900/60 border-zinc-800 text-zinc-300" : "bg-zinc-50 border-zinc-200 text-zinc-700"
-                  }`}>
-                    <span className="select-all break-all pr-8">{chatgptPreFillPrompt}</span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(chatgptPreFillPrompt);
-                        toast.success("Prompt copied to clipboard!", { icon: "📋" });
-                      }}
-                      className={`absolute right-2 p-1.5 rounded-lg transition-colors ${
-                        isDark ? "hover:bg-purple-500/10 text-zinc-400 hover:text-white" : "hover:bg-zinc-200 text-zinc-600 hover:text-zinc-900"
-                      }`}
-                      title="Copy prompt to clipboard"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className={`p-3 rounded-xl border text-xs leading-relaxed ${
-                  isDark ? "bg-amber-950/20 border-amber-900/40 text-amber-300" : "bg-amber-50 border-amber-200/60 text-amber-800"
-                }`}>
-                  <p className="font-semibold mb-1">💡 Important Instruction:</p>
-                  <p>When the ChatGPT window loads, click on the chat box, press <kbd className="px-1 py-0.5 rounded border border-current font-sans text-[10px]">Ctrl+V</kbd> (or <kbd className="px-1 py-0.5 rounded border border-current font-sans text-[10px]">Cmd+V</kbd>) to paste the copied prompt, and hit enter!</p>
-                </div>
-
-                <div className="pt-2 flex gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowChatGPTModal(false)}
-                    className="w-full rounded-xl"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleCopyAndLaunchChatGPT}
-                    className="w-full rounded-xl bg-purple-600 text-white hover:bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.4)] flex items-center justify-center gap-2"
-                  >
-                    Copy & Open ChatGPT
-                  </Button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Already Pre-indexed Bundle Warning Dialog */}
-      <AlertDialog open={showWarningAlert} onOpenChange={setShowWarningAlert}>
-        <AlertDialogContent className="bg-zinc-950 border border-zinc-800 text-zinc-100 max-w-md rounded-3xl shadow-2xl p-6 relative overflow-hidden backdrop-blur-2xl">
-          {/* Subtle top glow bar */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-white" />
-          
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-              <span className="text-amber-500">⚡</span> Pre-indexed Bundle Exists
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-zinc-400 text-sm mt-2 leading-relaxed">
-              A pre-indexed bundle for <span className="font-semibold text-purple-400 font-mono">{publishRepo}</span> at this exact commit (<span className="font-mono bg-white/5 px-1 py-0.5 rounded text-xs text-amber-300">{data.metadata?.commit?.substring(0, 7) || "latest"}</span>) already exists in the manifest registry.
-              <br /><br />
-              Publishing again is redundant. Are you sure you want to force overwrite or republish?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="mt-6 flex flex-col sm:flex-row gap-3">
-            <AlertDialogCancel className="w-full sm:w-auto rounded-xl bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors">
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                setShowWarningAlert(false);
-                await executePublishFlow();
-              }}
-              className="w-full sm:w-auto rounded-xl bg-purple-600 text-white hover:bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.4)] font-semibold"
-            >
-              Force Publish
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </motion.div>
   );
 }
