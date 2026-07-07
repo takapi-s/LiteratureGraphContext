@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  mcp-tests:
+    name: MCP contract & agent workflows
     runs-on: ubuntu-latest
 
     steps:
@@ -25,5 +26,40 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run tests
-        run: pytest
+      - name: Run MCP tool contract tests
+        run: pytest tests/test_mcp_all_tools.py -v --tb=short
+
+      - name: Run MCP agent workflow tests
+        run: pytest tests/test_mcp_agent_workflows.py -v --tb=short
+
+      - name: Run MCP CLI parity tests
+        run: pytest tests/test_mcp_cli_parity.py tests/test_mcp.py tests/test_v04_mcp_zotero.py tests/test_mcp_setup.py -v --tb=short
+
+  test:
+    name: Full test suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests (excluding MCP — covered by mcp-tests job)
+        run: |
+          pytest \
+            --ignore=tests/test_mcp_all_tools.py \
+            --ignore=tests/test_mcp_agent_workflows.py \
+            --ignore=tests/test_mcp_cli_parity.py \
+            --ignore=tests/test_mcp.py \
+            --ignore=tests/test_v04_mcp_zotero.py \
+            --ignore=tests/test_mcp_setup.py \
+            --tb=short
