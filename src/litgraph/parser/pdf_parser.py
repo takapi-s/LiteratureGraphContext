@@ -18,7 +18,12 @@ def parse_pdf(path: Path) -> Dict[str, Any]:
     with fitz.open(path) as doc:
         for i, page in enumerate(doc):
             text = page.get_text("text") or ""
-            pages.append({"page": i + 1, "text": text})
+            page_dict = page.get_text("dict") or {}
+            pages.append({
+                "page": i + 1,
+                "text": text,
+                "dict": page_dict,
+            })
             full_text_parts.append(text)
 
     return {
