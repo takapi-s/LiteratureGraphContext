@@ -45,20 +45,14 @@ def test_hash_cache_stable(project_tmp):
 
 def test_build_and_query(project_tmp):
     from litgraph.cli.config_manager import init_project
-    import yaml
 
-    init_project(project_tmp)  # ensure default aliases
-    aliases = project_tmp / ".litgraph" / "aliases.yaml"
-    data = yaml.safe_load(aliases.read_text()) or {}
-    data.setdefault("methods", {})["Graph Neural Network"] = ["GNN", "graph neural networks"]
-    aliases.write_text(yaml.safe_dump(data), encoding="utf-8")
-
+    init_project(project_tmp)
     write_fixtures(project_tmp / ".litgraph" / "cache" / "extracted")
     ctx = resolve_context(project_tmp)
     result = build_graph(ctx, FIXTURES)
     assert result["papers_indexed"] == len(FIXTURES)
 
-    finder = PaperFinder(ctx.db_path)
+    finder = PaperFinder(ctx.db_path, project_config=ctx.config)
     gnn = finder.find_papers_by_method("GNN")
     assert any("mobility_gnn_2024" == p.get("paper_id") for p in gnn)
 
@@ -69,6 +63,47 @@ def test_build_and_query(project_tmp):
     compare = finder.compare_papers(["mobility_gnn_2024", "event_forecasting_2025"])
     assert "markdown_table" in compare
     assert "GNN" in compare["markdown_table"] or "Graph Neural Network" in compare["markdown_table"]
+
+
+def test_entity_resolution_merges_gnn_variants(project_tmp):
+    from litgraph.cli.config_manager import init_project
+    from litgraph.graph.db_factory import get_graph_store
+
+    init_project(project_tmp)
+    ctx = resolve_context(project_tmp)
+    variants = [
+        {
+            "paper_id": "gnn_a",
+            "title": "Paper A",
+            "methods": ["Graph Neural Network"],
+            "tasks": [],
+            "datasets": [],
+            "metrics": [],
+            "contributions": [],
+            "claims": [],
+            "limitations": [],
+        },
+        {
+            "paper_id": "gnn_b",
+            "title": "Paper B",
+            "methods": ["GNN"],
+            "tasks": [],
+            "datasets": [],
+            "metrics": [],
+            "contributions": [],
+            "claims": [],
+            "limitations": [],
+        },
+    ]
+    build_graph(ctx, variants)
+    store = get_graph_store(ctx.db_path)
+    try:
+        method_names = store.list_entity_names("Method")
+    finally:
+        store.close()
+    gnn_names = [n for n in method_names if "graph neural" in n.lower() or n.upper() == "GNN"]
+    assert len(gnn_names) == 1
+    assert gnn_names[0] == "Graph Neural Network"
 
 
 def test_bib_metadata_merged(project_tmp):

@@ -400,6 +400,16 @@ class KuzuGraphStore(GraphQueryInterface):
                 papers.append(paper)
         return papers
 
+    def list_entity_names(self, label: str) -> List[str]:
+        allowed = {"Method", "Task", "Dataset", "Metric"}
+        if label not in allowed:
+            return []
+        result = self._execute(
+            f"MATCH (n:{label}) RETURN DISTINCT n.name AS name ORDER BY name",
+            {},
+        )
+        return [str(row["name"]) for row in self._rows(result) if row.get("name")]
+
     def find_papers_by_method(self, method: str) -> List[Dict[str, Any]]:
         result = self._execute(
             "MATCH (p:Paper)-[:USES]->(m:Method) WHERE lower(m.name) CONTAINS lower($q) "

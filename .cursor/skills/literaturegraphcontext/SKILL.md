@@ -47,6 +47,8 @@ search_papers("ambiguous topic")   # always first for discovery
    ```
 4. **Query**: CLI (`litgraph query …`) or MCP after `litgraph mcp setup` and registering `litgraph serve-mcp`.
 
+**Entity resolution (v0.7):** extract uses canonical English + `entity_catalog.json`; build merges synonyms via fuzzy match (A) and optional LLM disambiguation (B). `aliases.yaml` is no longer used. Re-index with `litgraph extract --force -y && litgraph build` after upgrading.
+
 Supported inputs under `papers_dir`: `.pdf` (full pipeline), `.md` (notes), `.bib` (metadata only).
 
 ## MCP setup (short)

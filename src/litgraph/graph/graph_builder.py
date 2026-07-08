@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Set
 from litgraph.cli.config_manager import ResolvedContext, get_config_value
 from litgraph.graph.citation_builder import bib_only_entries, build_citation_pairs, merge_citation_pairs
 from litgraph.graph.db_factory import get_graph_store
-from litgraph.graph.normalizer import EntityNormalizer
+from litgraph.graph.entity_catalog import EntityCatalog
+from litgraph.graph.entity_resolver import EntityResolver
 from litgraph.graph.reasoning import infer_contrasts_and_extends
 from litgraph.graph.reference_linker import build_all_reference_citation_pairs
 from litgraph.integrations.semantic_scholar import enrich_metadata
@@ -45,13 +46,15 @@ def build_graph(
 ) -> Dict[str, Any]:
     store = _store_for(ctx)
     store.initialize_schema()
-    normalizer = EntityNormalizer(ctx.aliases_path)
+    catalog = EntityCatalog.from_store(store)
+    resolver = EntityResolver(ctx.config)
     bib_entries = load_all_bib_entries(ctx.bib_cache_dir)
     indexed_ids: Set[str] = set()
 
     for raw in extractions:
-        normalized = normalizer.normalize_extraction(raw)
+        normalized = resolver.normalize_extraction(raw, catalog)
         store.upsert_paper_graph(normalized)
+        catalog.ingest_extraction(normalized)
         indexed_ids.add(normalized["paper_id"])
         bib_match = link_bib_to_paper(
             normalized["paper_id"],
@@ -66,6 +69,8 @@ def build_graph(
                 if extra:
                     metadata.update({k: v for k, v in extra.items() if v})
             store.upsert_paper_metadata(normalized["paper_id"], metadata)
+
+    catalog.save(ctx.litgraph_dir)
 
     extraction_ids = {raw["paper_id"] for raw in extractions}
     bib_only = bib_only_entries(bib_entries, extraction_ids)
@@ -113,6 +118,9 @@ def build_graph(
         "papers_indexed": len(indexed_ids),
         "nodes": len(graph_json.get("nodes", [])),
         "edges": len(graph_json.get("edges", [])),
+        "entities_resolved": resolver.stats.get("resolved", 0),
+        "entities_disambiguated": resolver.stats.get("disambiguated", 0),
+        "entities_new": resolver.stats.get("new", 0),
         "bib_entries_linked": sum(
             1
             for raw in extractions

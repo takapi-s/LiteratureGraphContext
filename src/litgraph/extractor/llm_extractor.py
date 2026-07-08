@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from litgraph.extractor.prompts import EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_TEMPLATE
 from litgraph.extractor.providers import get_provider
 from litgraph.extractor.schema import PaperExtraction
+from litgraph.graph.entity_catalog import EntityCatalog
 from litgraph.utils.paper_identity import finalize_extraction_identity
 
 STRING_LIST_FIELDS = ("tasks", "methods", "datasets", "metrics")
@@ -67,11 +68,14 @@ def extract_paper(
     model: Optional[str] = None,
     *,
     doi: Optional[str] = None,
+    entity_catalog: Optional[EntityCatalog] = None,
 ) -> PaperExtraction:
     provider = get_provider(provider_name, model=model)
+    catalog = entity_catalog or EntityCatalog()
     user_prompt = EXTRACTION_USER_TEMPLATE.format(
         paper_id=parsed.get("paper_id", "unknown"),
         title=parsed.get("title") or "Unknown",
+        known_entities=catalog.prompt_section(),
         sections_text=_sections_text(parsed.get("sections", [])),
     )
     raw = provider.complete_json(EXTRACTION_SYSTEM_PROMPT, user_prompt)

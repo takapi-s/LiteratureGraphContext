@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from litgraph.graph.db_factory import get_graph_store
-from litgraph.graph.normalizer import EntityNormalizer
+from litgraph.graph.entity_catalog import EntityCatalog
+from litgraph.graph.entity_resolver import EntityResolver
 from litgraph.query.comparison import comparison_markdown
 from litgraph.query.paper_search import search_papers as hybrid_search_papers
 from litgraph.query.related_work import generate_related_work_outline
@@ -17,17 +18,17 @@ class PaperFinder:
     def __init__(
         self,
         db_path: Path,
-        aliases_path: Optional[Path] = None,
         backend: str = "kuzu",
         neo4j_config: Optional[Dict[str, Any]] = None,
         *,
         read_only: bool = False,
+        project_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.db_path = db_path
         self.backend = backend
         self.neo4j_config = neo4j_config
         self.read_only = read_only
-        self.aliases_path = aliases_path or (db_path.parent.parent / "aliases.yaml")
+        self.project_config = project_config or {}
         self.litgraph_dir = db_path.parent.parent
         self._store = None
         self._closed = False
@@ -53,6 +54,12 @@ class PaperFinder:
             self._store.close()
             self._store = None
         self._closed = True
+
+    def _entity_catalog(self) -> EntityCatalog:
+        return EntityCatalog.from_store(self.store)
+
+    def _resolver(self) -> EntityResolver:
+        return EntityResolver(self.project_config)
 
     def _resolve_paper_id(self, paper_id: str) -> str:
         pid = normalize_paper_id_input(paper_id)
@@ -107,14 +114,25 @@ class PaperFinder:
         }
 
     def find_papers_by_method(self, method: str, fuzzy: bool = True) -> List[Dict[str, Any]]:
-        normalizer = EntityNormalizer(self.aliases_path)
-        canonical = normalizer.normalize_method_fuzzy(method) if fuzzy else normalizer.normalize_method(method)
+        catalog = self._entity_catalog()
+        resolver = self._resolver()
+        canonical = (
+            resolver.resolve_query_name(method, "method", catalog)
+            if fuzzy
+            else method.strip()
+        )
         rows = self.store.find_papers_by_method(canonical)
         if rows:
             return rows
         return self.store.find_papers_by_method(method)
 
     def find_papers_by_task(self, task: str) -> List[Dict[str, Any]]:
+        catalog = self._entity_catalog()
+        resolver = self._resolver()
+        canonical = resolver.resolve_query_name(task, "task", catalog)
+        rows = self.store.find_papers_by_task(canonical)
+        if rows:
+            return rows
         return self.store.find_papers_by_task(task)
 
     def find_limitations(
@@ -177,14 +195,20 @@ class PaperFinder:
         include_summary: bool = False,
     ) -> Dict[str, Any]:
         resolved = self._resolve_paper_id(paper_id)
-        if not self.get_paper(resolved):
+        paper = self.get_paper(resolved)
+        if not paper:
             return self._paper_not_found_error(paper_id)
         neighbors = self.store.get_paper_neighbors(
             resolved,
             relationships=relationships,
             include_summary=include_summary,
         )
-        return {"paper_id": resolved, "title": (self.get_paper(resolved) or {}).get("title"), "neighbors": neighbors, "count": len(neighbors)}
+        return {
+            "paper_id": resolved,
+            "title": paper.get("title"),
+            "neighbors": neighbors,
+            "count": len(neighbors),
+        }
 
     def expand_paper_graph(
         self,
@@ -194,9 +218,10 @@ class PaperFinder:
         include_summary: bool = False,
     ) -> Dict[str, Any]:
         resolved = self._resolve_paper_id(paper_id)
-        if not self.get_paper(resolved):
+        paper = self.get_paper(resolved)
+        if not paper:
             return self._paper_not_found_error(paper_id)
-        papers = self.store.expand_paper_graph(
+        neighbors = self.store.expand_paper_graph(
             resolved,
             hops=hops,
             relationships=relationships,
@@ -204,9 +229,10 @@ class PaperFinder:
         )
         return {
             "paper_id": resolved,
-            "title": (self.get_paper(resolved) or {}).get("title"),
-            "papers": papers,
-            "count": len(papers),
+            "title": paper.get("title"),
+            "hops": hops,
+            "papers": neighbors,
+            "count": len(neighbors),
         }
 
     def explore_paper_graph(
@@ -220,25 +246,35 @@ class PaperFinder:
         paper = self.get_paper(resolved)
         if not paper:
             return self._paper_not_found_error(paper_id)
-        hop_count = max(int(hops), 1)
-        if hop_count == 1:
-            raw_nodes = self.store.get_paper_neighbors(
+
+        if hops <= 1:
+            neighbors = self.store.get_paper_neighbors(
                 resolved,
                 relationships=relationships,
                 include_summary=include_summary,
             )
-            nodes = [{**node, "hop": 1} for node in raw_nodes]
+            nodes = []
+            for n in neighbors:
+                item = dict(n)
+                item.setdefault("hop", 1)
+                nodes.append(item)
         else:
-            nodes = self.store.expand_paper_graph(
+            expanded = self.store.expand_paper_graph(
                 resolved,
-                hops=hop_count,
+                hops=hops,
                 relationships=relationships,
                 include_summary=include_summary,
             )
+            nodes = []
+            for n in expanded:
+                item = dict(n)
+                item.setdefault("hop", int(item.get("hop") or 1))
+                nodes.append(item)
+
         return {
             "paper_id": resolved,
             "title": paper.get("title"),
-            "hops": hop_count,
+            "hops": hops,
             "nodes": nodes,
             "count": len(nodes),
         }
@@ -256,7 +292,6 @@ class PaperFinder:
             top_k=top_k,
             center_paper_id=center,
             litgraph_dir=self.litgraph_dir,
-            aliases_path=self.aliases_path,
         )
 
     def _papers_full(self) -> List[Dict[str, Any]]:

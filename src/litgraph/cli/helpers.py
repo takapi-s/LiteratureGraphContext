@@ -16,6 +16,7 @@ from litgraph.cli.config_manager import ResolvedContext, get_config_value, resol
 from litgraph.core.jobs import JobManager, JobStatus
 from litgraph.extractor.llm_extractor import extract_paper
 from litgraph.extractor.providers import get_provider
+from litgraph.graph.entity_catalog import EntityCatalog
 from litgraph.graph.graph_builder import build_graph, _neo4j_config
 from litgraph.graph.db_factory import get_graph_store
 from litgraph.parser.dispatcher import collect_parse_targets, parse_file
@@ -41,10 +42,10 @@ def _finder(ctx: ResolvedContext, *, read_only: bool = True) -> PaperFinder:
     backend = str(get_config_value(ctx, "database", "LITGRAPH_DATABASE"))
     return PaperFinder(
         ctx.db_path,
-        aliases_path=ctx.aliases_path,
         backend=backend,
         neo4j_config=_neo4j_config(ctx),
         read_only=read_only,
+        project_config=ctx.config,
     )
 
 
@@ -213,9 +214,27 @@ def _run_extractions(
         bib_doi = bib_match.get("doi") if bib_match else None
 
         last_error: Optional[Exception] = None
+        entity_catalog = EntityCatalog.load(ctx.litgraph_dir)
         for attempt in range(1, EXTRACTION_MAX_RETRIES + 1):
             try:
-                extraction = extract_paper(doc, provider_name, model=model_name, doi=bib_doi)
+                try:
+                    extraction = extract_paper(
+                        doc,
+                        provider_name,
+                        model=model_name,
+                        doi=bib_doi,
+                        entity_catalog=entity_catalog,
+                    )
+                except TypeError as exc:
+                    # Backward-compatible for tests/mocks that patch extract_paper.
+                    if "entity_catalog" not in str(exc):
+                        raise
+                    extraction = extract_paper(
+                        doc,
+                        provider_name,
+                        model=model_name,
+                        doi=bib_doi,
+                    )
                 data = extraction.model_dump()
                 paper_id = str(data["paper_id"])
                 out_path = ctx.extracted_cache_dir / f"{paper_id}.json"

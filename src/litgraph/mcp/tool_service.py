@@ -45,10 +45,10 @@ class MCPToolService:
         backend = str(get_config_value(self.ctx, "database", "LITGRAPH_DATABASE"))
         self.finder = PaperFinder(
             self.ctx.db_path,
-            aliases_path=self.ctx.aliases_path,
             backend=backend,
             neo4j_config=_neo4j_config(self.ctx),
             read_only=True,
+            project_config=self.ctx.config,
         )
 
     @property

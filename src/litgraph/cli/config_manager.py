@@ -32,6 +32,11 @@ DEFAULT_PROJECT_CONFIG: Dict[str, Any] = {
     },
     "zotero_user_id": "",
     "zotero_api_key": "",
+    "entity_resolution": {
+        "auto_merge_threshold": 0.92,
+        "candidate_threshold": 0.82,
+        "disambiguation_enabled": True,
+    },
 }
 
 
@@ -58,10 +63,6 @@ class ResolvedContext:
     @property
     def bib_cache_dir(self) -> Path:
         return self.cache_dir / "bib"
-
-    @property
-    def aliases_path(self) -> Path:
-        return self.litgraph_dir / "aliases.yaml"
 
     @property
     def papers_dir(self) -> Path:
@@ -181,41 +182,6 @@ def init_project(project_root: Path, papers_dir: Optional[str] = None) -> Path:
             yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
     elif papers_dir:
         save_config_value(litgraph_dir, "papers_dir", papers_dir, project_root)
-
-    aliases_path = litgraph_dir / "aliases.yaml"
-    if not aliases_path.exists():
-        with open(aliases_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump({
-                "methods": {
-                    "Graph Neural Network": ["GNN", "graph neural networks", "graph neural network"],
-                    "Graph Attention Network": ["GAT", "graph attention", "graph attention network"],
-                    "Graph Convolutional Network": [
-                        "GCN",
-                        "graph convolutional network",
-                        "graph convolution",
-                    ],
-                },
-                "datasets": {
-                    "GPS trajectory": ["GPS trajectories", "trajectory data"],
-                },
-                "tasks": {
-                    "Traffic prediction": [
-                        "traffic forecasting",
-                        "traffic prediction",
-                        "交通予測",
-                    ],
-                    "Consumption prediction": [
-                        "consumption forecasting",
-                        "consumption prediction",
-                        "消費予測",
-                    ],
-                    "Mobility prediction": [
-                        "mobility forecasting",
-                        "mobility prediction",
-                        "人流予測",
-                    ],
-                },
-            }, f)
 
     return litgraph_dir
 

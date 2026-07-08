@@ -267,6 +267,16 @@ class Neo4jGraphStore(GraphQueryInterface):
     def _papers_for_compare(self, paper_ids: List[str]) -> List[Dict[str, Any]]:
         return [p for pid in paper_ids if (p := self.get_paper(pid))]
 
+    def list_entity_names(self, label: str) -> List[str]:
+        allowed = {"Method", "Task", "Dataset", "Metric"}
+        if label not in allowed:
+            return []
+        rows = self._run(
+            f"MATCH (n:{label}) RETURN DISTINCT n.name AS name ORDER BY name",
+            {},
+        )
+        return [str(row["name"]) for row in rows if row.get("name")]
+
     def find_papers_by_method(self, method: str) -> List[Dict[str, Any]]:
         return self._run(
             "MATCH (p:Paper)-[:USES]->(m:Method) WHERE toLower(m.name) CONTAINS toLower($q) "

@@ -40,6 +40,7 @@ Prioritized under the design philosophy above.
 | **PDF parsing** | Heuristic section detection only | Expand section patterns; parse diagnostics |
 | **Graph UI** | CGC Playground fork; paper-centric sidebar not customized | Paper preview cards in sidebar |
 | **MCP stability** | Kuzu lock when `viz` and `serve-mcp` run together | Document single-writer policy; avoid concurrent writers |
+| **Entity resolution** | Duplicate Method/Task nodes from extract variance | **Done (v0.7):** English canonical names + catalog fuzzy merge (A) + optional LLM disambiguation (B); `aliases.yaml` removed |
 
 ### By design (not limitations — delegated to agent)
 
@@ -118,6 +119,7 @@ v0.6 exposes **14 MCP tools**. Agents must choose among overlapping entry points
 - [x] **Remove ingest tools from MCP** — `list_jobs`, `check_job_status` → CLI only
 - [x] **Fold claim evidence** — `get_evidence_for_claim` into `summarize_paper`
 - [x] **Update MCP tests & skill** — `test-mcp`, smoke cases, Cursor skill to 6 tools
+- [x] **Entity resolution** — `entity_catalog.json` + build-time resolver (A/B); `aliases.yaml` removed
 
 v0.7.0 uses a **big-bang** cut to **6 MCP query tools**; removed tool names return a one-release redirect JSON (not listed in `tools/list`).
 

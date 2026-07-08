@@ -370,6 +370,12 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
   const [simulationReady, setSimulationReady] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
+  const selectedPaper = useMemo(() => {
+    if (!selectedFile) return null;
+    const paperId = selectedFile.startsWith("papers/") ? selectedFile.slice("papers/".length) : selectedFile;
+    return (paperSummaries || []).find((p: any) => String(p.paper_id) === String(paperId)) || null;
+  }, [selectedFile, paperSummaries]);
+
   const handleSvgExport = async () => {
     try {
       if (graphMode === 'mermaid') {
@@ -1822,6 +1828,75 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
                 </div>
 
                 <div className="flex-1 overflow-auto custom-scrollbar p-4">
+                  {selectedPaper && (
+                    <div
+                      className={`mb-4 rounded-xl border p-3 backdrop-blur-3xl ${
+                        isDark ? "bg-white/3 border-white/10" : "bg-black/3 border-black/10"
+                      }`}
+                    >
+                      <div className="text-[13px] font-bold leading-snug" style={{ color: pal.text }}>
+                        {selectedPaper.title || selectedPaper.paper_id}
+                      </div>
+
+                      <div className="mt-1 text-[11px] truncate" style={{ color: pal.dimText }}>
+                        {selectedPaper.authors || "Unknown authors"}
+                        {selectedPaper.year ? ` · ${selectedPaper.year}` : ""}
+                        {selectedPaper.venue ? ` · ${selectedPaper.venue}` : ""}
+                      </div>
+
+                      {selectedPaper.doi && (
+                        <div className="mt-2 text-[11px] flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: pal.dimText }}>
+                            DOI
+                          </span>
+                          <a
+                            href={`https://doi.org/${String(selectedPaper.doi).replace(/^https?:\/\/doi\.org\//, "")}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={`truncate underline underline-offset-2 ${
+                              isDark ? "text-purple-300 hover:text-purple-200" : "text-purple-700 hover:text-purple-900"
+                            }`}
+                            title={selectedPaper.doi}
+                          >
+                            {selectedPaper.doi}
+                          </a>
+                        </div>
+                      )}
+
+                      {((selectedPaper.tasks?.length || 0) > 0 || (selectedPaper.methods?.length || 0) > 0) && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {(selectedPaper.tasks || []).slice(0, 6).map((t: string) => (
+                            <span
+                              key={`task-${selectedPaper.paper_id}-${t}`}
+                              className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                isDark ? "bg-sky-400/10 text-sky-200 border border-sky-400/15" : "bg-sky-500/10 text-sky-800 border border-sky-500/15"
+                              }`}
+                              title={t}
+                            >
+                              {t}
+                            </span>
+                          ))}
+                          {(selectedPaper.methods || []).slice(0, 6).map((m: string) => (
+                            <span
+                              key={`method-${selectedPaper.paper_id}-${m}`}
+                              className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                isDark ? "bg-emerald-400/10 text-emerald-200 border border-emerald-400/15" : "bg-emerald-500/10 text-emerald-800 border border-emerald-500/15"
+                              }`}
+                              title={m}
+                            >
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="mt-3 text-[10px] uppercase tracking-widest font-black flex gap-3" style={{ color: pal.dimText }}>
+                        <span>{selectedPaper.claim_count ?? 0} claims</span>
+                        <span>{selectedPaper.limitation_count ?? 0} limitations</span>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     {fileEntities.map((n: any) => {
                       const page = n.properties?.page;

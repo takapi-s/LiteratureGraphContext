@@ -124,7 +124,6 @@ def search_papers(
     top_k: int = 10,
     center_paper_id: Optional[str] = None,
     litgraph_dir=None,
-    aliases_path=None,
 ) -> Dict[str, Any]:
     query = (query or "").strip()
     if not query:

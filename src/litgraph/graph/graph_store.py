@@ -48,6 +48,10 @@ class GraphQueryInterface(ABC):
         ...
 
     @abstractmethod
+    def list_entity_names(self, label: str) -> List[str]:
+        ...
+
+    @abstractmethod
     def find_papers_by_method(self, method: str) -> List[Dict[str, Any]]:
         ...
 

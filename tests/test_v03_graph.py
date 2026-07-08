@@ -27,7 +27,7 @@ def test_full_compare(project_tmp, monkeypatch):
     build_graph(ctx, FIXTURES)
     from litgraph.query.paper_finder import PaperFinder
 
-    finder = PaperFinder(ctx.db_path, aliases_path=ctx.aliases_path)
+    finder = PaperFinder(ctx.db_path, project_config=ctx.config)
     result = finder.compare_papers(["mobility_gnn_2024", "event_forecasting_2025"])
     assert "metric" in result["papers"][0]
     assert "difference" in result["papers"][0]
