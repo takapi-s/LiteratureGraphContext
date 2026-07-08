@@ -25,6 +25,19 @@ LiteratureGraphContext is a **structured evidence layer**, not an interpretation
 
 ---
 
+## Experimental ideas (hard/uncertain)
+
+Ideas that are not yet hard-committed are tracked on an **Impact × Difficulty** matrix.
+
+See `docs/LGC_KNOWLEDGE_BASE.md` for IDEA Matrix semantics, interaction model, and JSON format.
+
+Open the interactive matrix in `playground/idea_matrix/idea_matrix.html`.
+
+<iframe
+  src="playground/idea_matrix/idea_matrix.html"
+  style="width:100%; height:520px; border:1px solid #e5e7eb; border-radius:12px; background:#ffffff;"
+></iframe>
+
 ## Known limitations — and how we address them
 
 Prioritized under the design philosophy above.

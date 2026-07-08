@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import List, Optional
 
@@ -134,6 +135,103 @@ def build_cmd(
         f"Indexed {result.get('papers_indexed', 0)} paper(s), "
         f"nodes={result.get('nodes', 0)}, edges={result.get('edges', 0)}, "
         f"cites_from_references={result.get('cites_from_references', 0)}."
+    )
+
+
+@app.command("rebuild")
+def rebuild_cmd(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
+    with_extract: bool = typer.Option(False, "--with-extract", help="Run LLM extract before build"),
+    force_extract: bool = typer.Option(False, "--force-extract", help="Force re-extract all papers (implies --with-extract)"),
+    enrich_s2: bool = typer.Option(False, "--enrich-s2", help="Enrich metadata via Semantic Scholar on rebuild"),
+    clear_parsed: bool = typer.Option(False, "--clear-parsed", help="Delete parsed cache before parsing"),
+    clear_extracted: bool = typer.Option(False, "--clear-extracted", help="Delete extracted cache before extracting/building"),
+    clear_embeddings: bool = typer.Option(True, "--clear-embeddings/--keep-embeddings", help="Clear embedding cache (default: clear)"),
+) -> None:
+    """Delete local DB artifacts and rebuild from scan → parse → (optional) extract → build.
+
+    Notes:
+    - For Kuzu backend, this removes the local DB directory under .litgraph/db.
+    - For Neo4j backend, the DB is remote; this command will NOT delete the remote DB.
+    """
+    ctx = config_manager.resolve_context()
+    backend = str(ctx.config.get("database") or "kuzu")
+    do_extract = with_extract or force_extract
+
+    targets = []
+    if backend == "kuzu":
+        targets.append(str(ctx.litgraph_dir / "db"))
+    targets.append(str(ctx.litgraph_dir / "graph.json"))
+    targets.append(str(ctx.litgraph_dir / "cache" / "entity_catalog.json"))
+    if clear_embeddings:
+        targets.append(str(ctx.litgraph_dir / "cache" / "embeddings.json"))
+    if clear_parsed:
+        targets.append(str(ctx.litgraph_dir / "cache" / "parsed"))
+    if clear_extracted:
+        targets.append(str(ctx.litgraph_dir / "cache" / "extracted"))
+
+    if not yes:
+        message = (
+            "This will delete local LitGraph artifacts and rebuild.\n\n"
+            f"Backend: {backend}\n"
+            + ("(Kuzu DB under .litgraph/db will be deleted)\n" if backend == "kuzu" else "(Remote DB will NOT be deleted)\n")
+            + "\nDelete targets:\n  - "
+            + "\n  - ".join(targets)
+            + "\n\nProceed?"
+        )
+        if not typer.confirm(message, default=False):
+            console.print("[yellow]Cancelled.[/yellow]")
+            return
+
+    # Delete selected artifacts.
+    if backend == "kuzu":
+        shutil.rmtree(ctx.litgraph_dir / "db", ignore_errors=True)
+        (ctx.litgraph_dir / "db").mkdir(parents=True, exist_ok=True)
+
+    for path in [
+        ctx.litgraph_dir / "graph.json",
+        ctx.litgraph_dir / "cache" / "entity_catalog.json",
+        ctx.litgraph_dir / "cache" / "embeddings.json",
+    ]:
+        if path.exists() and (path.name != "embeddings.json" or clear_embeddings):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+    if clear_parsed:
+        shutil.rmtree(ctx.litgraph_dir / "cache" / "parsed", ignore_errors=True)
+    if clear_extracted:
+        shutil.rmtree(ctx.litgraph_dir / "cache" / "extracted", ignore_errors=True)
+
+    # Ensure cache dirs exist.
+    (ctx.litgraph_dir / "cache" / "parsed").mkdir(parents=True, exist_ok=True)
+    (ctx.litgraph_dir / "cache" / "extracted").mkdir(parents=True, exist_ok=True)
+
+    # Re-run pipeline.
+    scan = helpers.scan_papers(ctx, None, persist_dir=False)
+    console.print(f"Scanned {scan['total']} files ({scan['changed']} changed).")
+    parsed = helpers.parse_papers(ctx, only_changed=False, verbose=False)
+    console.print(f"Parsed {parsed.get('parsed', 0)} paper(s), {parsed.get('bib_files', 0)} bib file(s).")
+
+    if do_extract:
+        result = helpers.extract_papers(
+            ctx,
+            skip_confirm=yes,
+            force=force_extract,
+            show_progress=True,
+        )
+        if result.get("cancelled"):
+            console.print("[yellow]Extraction cancelled.[/yellow]")
+            return
+        console.print(
+            f"Extracted {result.get('extracted', 0)} paper(s), skipped {result.get('skipped', 0)}."
+        )
+
+    built = helpers.build_paper_graph(ctx, enrich_s2=enrich_s2)
+    console.print(
+        f"[green]Rebuilt[/green] {built.get('papers_indexed', 0)} paper(s): "
+        f"nodes={built.get('nodes', 0)}, edges={built.get('edges', 0)}."
     )
 
 
