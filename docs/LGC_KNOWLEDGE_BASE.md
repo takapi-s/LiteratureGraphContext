@@ -77,18 +77,23 @@ Conventions:
 - Color hints: `green` = quick win, `amber` = medium effort, `red` = hard/high leverage, `blue`/`purple`/`pink` = area themes, `gray` = housekeeping.
 - Within the same difficulty/impact cell, dots are stacked vertically so they do not overlap.
 
-### Idea index (I01–I08)
+### Idea index (I01–I13)
 
-| ID | Idea | Color |
-|---|---|---|
-| I01 | Hybrid search entry (embeddings + keyword + graph) | red |
-| I02 | New inputs: arXiv/URL/Zotero/CSV connectors | red |
-| I03 | Containment relations: section/subsection + CONTAINS edges | amber |
-| I04 | PDF structure: robust section detection + diagnostics | amber |
-| I05 | Citations: merge refs + bib better (CITES quality) | pink |
-| I06 | ID resolution & errors: actionable hints in MCP/CLI | blue |
-| I07 | Auto-generate `paper_id_map` from `paper_registry` | green |
-| I08 | Graph UI: paper-centric sidebar + preview cards | purple |
+| ID | Idea | Color | Target |
+|---|---|---|---|
+| I01 | Hybrid search entry (embeddings + keyword + graph) | red | v0.5 ✅ |
+| I02 | New inputs: arXiv/URL/Zotero/CSV connectors | red | v0.9, v0.11 |
+| I03 | Containment relations: section/subsection + CONTAINS edges | amber | TBD |
+| I04 | PDF structure: robust section detection + diagnostics | amber | v0.8 |
+| I05 | Citations: merge refs + bib better (CITES quality) | pink | TBD |
+| I06 | ID resolution & errors: actionable hints in MCP/CLI | blue | v0.8+ |
+| I07 | Auto-generate `paper_id_map` from `paper_registry` | green | TBD |
+| I08 | Graph UI: paper-centric sidebar + preview cards | purple | v0.8 |
+| I09 | Workspace-scoped graph (`workspace_id` on nodes & queries) | red | v0.10 |
+| I10 | Programmatic API (`LitgraphContext`, injectable store) | amber | v0.9 |
+| I11 | HTTP MCP transport (remote callers) | blue | v0.12 |
+| I12 | Folder watch / auto-ingest (`watch_papers_directory`) | blue | v0.12 |
+| I13 | MCP setup wizard (interactive onboarding) | green | v0.8+ |
 
 ---
 

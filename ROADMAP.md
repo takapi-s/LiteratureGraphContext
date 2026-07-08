@@ -3,195 +3,163 @@
 > **Current version**: 0.7.0  
 > **Last updated**: 2026-07
 
-Tracks **remaining work**, known limitations, and out-of-scope items.  
-Shipped features through v0.5.x are recorded in git history and [docs/literature_graph_mcp_implementation_plan.md](docs/literature_graph_mcp_implementation_plan.md).
+OSS (`literature-graph` on PyPI) の残タスクと既知の制約。v0.5 以前の実装履歴は [docs/literature_graph_mcp_implementation_plan.md](docs/literature_graph_mcp_implementation_plan.md) を参照。
 
 ## Design philosophy
 
-LiteratureGraphContext is a **structured evidence layer**, not an interpretation engine.
+LGC は **構造化エビデンス層**（解釈エンジンではない）。
 
-| Layer | Responsibility | Examples |
+| Layer | 役割 | 例 |
 |---|---|---|
-| **LGC (data plane)** | Ingest, structure, connect, cite | PDF → graph; `CITES` / `CONTRASTS_WITH`; MCP tools with `evidence_text` |
-| **Connected agent** | Interpret, cluster, draft | Research gaps; related work prose; cross-field synthesis |
+| **LGC（データ平面）** | 取り込み・構造化・接続・引用 | PDF → グラフ; `CITES` / `CONTRASTS_WITH`; MCP が `evidence_text` を返す |
+| **接続エージェント** | 解釈・クラスタリング・執筆 | 研究ギャップ; Related Work 草稿; 横断的な統合 |
 
-**Core bet:** multiple studies are properly linked in the graph; MCP returns topic-filtered, evidence-backed facts; the agent answers from that material.
+**コア:** 複数論文をグラフで正しくつなぎ、MCP がトピック絞り込み済みの根拠付きファクトを返し、エージェントがそれをもとに回答する。
 
-**Intentionally not in LGC:** pre-computed gap clustering, related-work draft generation, embedding-based narrative synthesis. Use `find_limitations`, `compare_papers`, and `build_literature_matrix` as agent context instead.
+**LGC に入れない:** ギャップの事前クラスタリング、Related Work 草稿生成、埋め込みベースのナラティブ合成。代わりに `find_limitations` / `compare_papers` / `build_literature_matrix` をエージェントのコンテキストとして使う。
 
-**In scope (search layer):** `search_papers` with keyword + embedding hybrid retrieval; `expand_paper_graph` for multi-hop lineage; **opaque immutable `paper_id` (UUID at first ingest)** with meaning in metadata + search.
+**検索層（スコープ内）:** `search_papers`（キーワード + 埋め込みハイブリッド）、`explore_paper_graph`（多ホップ系譜）、不変 UUID `paper_id`。
 
-**Vision:** *Literature* means written sources broadly—not only academic papers. The current focus is PDF-centric literature review, but the long-term goal is to index and graph **any structured knowledge source** (web pages, documentation, technical blogs, etc.) under the same schema-oriented workflow.
+**ビジョン:** *Literature* は学術論文に限らない。現状は PDF 中心の文献レビューだが、長期では Web・ドキュメント・技術ブログなど任意の構造化ソースを同じスキーマで扱う。
 
 ---
 
-## Experimental ideas (hard/uncertain)
+## Experimental ideas (Impact × Difficulty)
 
-Ideas that are not yet hard-committed are tracked on an **Impact × Difficulty** matrix.
-
-See `docs/LGC_KNOWLEDGE_BASE.md` for IDEA Matrix semantics and editing workflow.
+未コミット・不確実なアイデア。編集は `docs/assets/idea_matrix.drawio.svg`（draw.io / VS Code Draw.io 拡張）。意味論は [docs/LGC_KNOWLEDGE_BASE.md](docs/LGC_KNOWLEDGE_BASE.md) を参照。
 
 ![IDEA Matrix](docs/assets/idea_matrix.drawio.svg)
 
-Edit: `docs/assets/idea_matrix.drawio.svg` (draw.io / diagrams.net, or VS Code Draw.io extension)
-
-| ID | Idea |
-|---|---|
-| I01 | Hybrid search entry (embeddings + keyword + graph) |
-| I02 | New inputs: arXiv/URL/Zotero/CSV connectors |
-| I03 | Containment relations: section/subsection + CONTAINS edges |
-| I04 | PDF structure: robust section detection + diagnostics |
-| I05 | Citations: merge refs + bib better (CITES quality) |
-| I06 | ID resolution & errors: actionable hints in MCP/CLI |
-| I07 | Auto-generate `paper_id_map` from `paper_registry` |
-| I08 | Graph UI: paper-centric sidebar + preview cards |
-
-## Known limitations — and how we address them
-
-Prioritized under the design philosophy above.
-
-### Active (improves graph quality & agent context)
-
-| Area | Limitation | Direction |
+| ID | Idea | Target |
 |---|---|---|
-| **Paper identity** | Content-based slug IDs changed on re-extract | **Done (v0.6):** UUID at scan/parse via `paper_registry.json`; `source_path` / `source_stem` on Paper nodes |
-| **Search entry** | Attribute search only; ambiguous queries need many MCP calls | **Done (v0.5):** `search_papers` (keyword + RRF + optional embeddings) |
-| **Graph traversal** | 1-hop `get_paper_neighbors` only | **Done (v0.5):** `expand_paper_graph` (multi-hop BFS with edge weights) |
-| **MCP tool coverage** | Few tools had automated MCP tests | **Done (v0.6):** full MCP contract + agent workflow tests; `litgraph test-mcp` |
-| **PDF parsing** | Heuristic section detection only | Expand section patterns; parse diagnostics |
-| **Graph UI** | CGC Playground fork; paper-centric sidebar not customized | Paper preview cards in sidebar |
-| **MCP stability** | Kuzu lock when `viz` and `serve-mcp` run together | Document single-writer policy; avoid concurrent writers |
-| **Entity resolution** | Duplicate Method/Task nodes from extract variance | **Done (v0.7):** English canonical names + catalog fuzzy merge (A) + optional LLM disambiguation (B); `aliases.yaml` removed |
-
-### By design (not limitations — delegated to agent)
-
-| Area | Note |
-|---|---|
-| **Research gap clustering** | Use `find_limitations` + `compare_papers`; agent interprets gaps |
-| **Related work prose** | `generate_related_work_outline` is optional sugar |
-
-### Active — MCP tool surface (too many tools)
-
-v0.6 exposes **14 MCP tools**. Agents must choose among overlapping entry points (`search_papers` vs `find_papers_by_method` / `find_papers_by_task` vs `build_literature_matrix`; `get_paper_neighbors` vs `expand_paper_graph`). Evaluation showed agents pick the wrong tool or call redundant tools. **Target for v0.7: 6–8 core query tools**; ingest/job ops stay CLI-only.
-
-#### Problem
-
-| Issue | Example |
-|---|---|
-| **Redundant discovery** | `find_papers_by_task("traffic flow prediction")` → 0 hits; `search_papers` → 8+ hits (keyword + embedding). Task/method tools are already internal channels of `search_papers`. |
-| **Split graph traversal** | `get_paper_neighbors` (1-hop) and `expand_paper_graph` (multi-hop) differ only by `hops`. |
-| **Agent sugar in LGC** | `generate_related_work_outline` drafts prose — delegated to the connected agent by design. |
-| **Ingest ops on MCP** | `list_jobs` / `check_job_status` are pipeline admin, not literature queries. |
-| **Narrow evidence lookup** | `get_evidence_for_claim` serves claim IDs agents rarely have without `summarize_paper` first. |
-
-#### Consolidation plan (v0.7)
-
-| Action | Tools | Replacement / note |
-|---|---|---|
-| **Keep (core)** | `search_papers`, `summarize_paper`, `compare_papers`, `find_limitations`, `list_papers` | Primary agent workflow: discover → detail → compare → limitations |
-| **Merge** | `get_paper_neighbors` + `expand_paper_graph` | Single `explore_paper_graph(paper_id, hops=1, relationships?, include_summary?)` — `hops=1` replaces neighbors |
-| **Deprecate → CLI only** | `find_papers_by_method`, `find_papers_by_task` | Keep as `litgraph query` subcommands; remove from MCP. `search_papers` covers discovery; optional `search_mode: method \| task` for exact Task/Method node lookup |
-| **Deprecate → CLI only** | `build_literature_matrix` | Matrix rows available via `compare_papers` on `search_papers` results, or `litgraph query matrix` |
-| **Remove from MCP** | `generate_related_work_outline` | Agent drafts from `compare_papers` + `find_limitations` context (same rationale as removed `find_research_gaps`) |
-| **Remove from MCP** | `list_jobs`, `check_job_status` | Background extract status via CLI (`litgraph jobs`); not part of literature Q&A |
-| **Fold or defer** | `get_evidence_for_claim` | Return `claims` + evidence inside `summarize_paper`; drop standalone tool unless claim-level search is needed |
-
-**Target MCP surface (7 tools):** `list_papers`, `search_papers`, `summarize_paper`, `compare_papers`, `find_limitations`, `explore_paper_graph` (merged), and optionally one ingest helper if watch/sync lands.
-
-#### Migration steps
-
-1. **v0.7.0** — Add `explore_paper_graph`; mark `get_paper_neighbors` / `expand_paper_graph` deprecated in tool descriptions.
-2. **v0.7.x** — MCP server registers reduced tool set; deprecated names return a redirect message with the replacement tool name for one minor release.
-3. **v0.8.0** — Remove deprecated MCP tools; keep CLI equivalents (`litgraph query method`, `task`, `matrix`, `neighbors`, `expand`).
-4. **Docs** — Update Cursor skill, MCP instructions, and `litgraph test-mcp` smoke cases to the reduced set.
-
-#### Success criteria
-
-- Agent smoke workflows (`search → summarize → compare → limitations → graph`) pass with ≤ 7 MCP tools.
-- No regression in discovery quality vs current `search_papers` + `expand_paper_graph` path.
-- `litgraph test-mcp` covers the reduced contract only.
-
-### Deferred (acceptable for now)
-
-| Area | Limitation | When to revisit |
-|---|---|---|
-| **MCP setup** | Writes `mcp.json` only; no interactive wizard | v1.0 onboarding |
-| **md parser** | Single-paper notes only | Multi-paper survey notes workflow |
-| **Zotero sync** | Web API only | Desktop sqlite sync |
-| **Tests** | No E2E test with live LLM API | Optional CI smoke |
-| **Neo4j** | No migration tool from Kuzu | Teams on Neo4j at scale |
-| **Claim-level embeddings** | Paper-level embeddings only | Fine-grained evidence search |
-
-### Out of scope (unchanged)
-
-| Area | Note |
-|---|---|
-| **PDF layout** | Full layout reconstruction out of scope |
-| **Free-form KG** | Fixed literature-review schema only |
-| **Graphiti integration** | Reference only; no runtime dependency |
+| I01 | Hybrid search entry (embeddings + keyword + graph) | v0.5 ✅ |
+| I02 | New inputs: arXiv / URL / Zotero / CSV connectors | v0.9, v0.11 |
+| I03 | Containment: section / subsection + `CONTAINS` edges | TBD |
+| I04 | PDF structure: robust section detection + diagnostics | v0.8 |
+| I05 | Citations: merge refs + bib better (`CITES` quality) | TBD |
+| I06 | ID resolution & errors: actionable hints in MCP / CLI | v0.8+ |
+| I07 | Auto-generate `paper_id_map` from `paper_registry` | TBD |
+| I08 | Graph UI: paper-centric sidebar + preview cards | v0.8 |
+| I09 | Workspace-scoped graph (`workspace_id` on nodes & queries) | v0.10 |
+| I10 | Programmatic API (`LitgraphContext`, injectable store) | v0.9 |
+| I11 | HTTP MCP transport (remote callers) | v0.12 |
+| I12 | Folder watch / auto-ingest (`watch_papers_directory`) | v0.12 |
+| I13 | MCP setup wizard (interactive onboarding) | v0.8+ |
 
 ---
 
-## v0.7 — MCP tool consolidation
+## Known limitations
 
-- [x] **`explore_paper_graph`** — merge `get_paper_neighbors` + `expand_paper_graph` (`hops` parameter)
-- [x] **Deprecate attribute search on MCP** — `find_papers_by_method`, `find_papers_by_task` → CLI only (redirect on old MCP names)
-- [x] **Remove agent-sugar tools from MCP** — `generate_related_work_outline`, `build_literature_matrix`
-- [x] **Remove ingest tools from MCP** — `list_jobs`, `check_job_status` → CLI only
-- [x] **Fold claim evidence** — `get_evidence_for_claim` into `summarize_paper`
-- [x] **Update MCP tests & skill** — `test-mcp`, smoke cases, Cursor skill to 6 tools
-- [x] **Entity resolution** — `entity_catalog.json` + build-time resolver (A/B); `aliases.yaml` removed
+| Area | Status | Direction |
+|---|---|---|
+| Paper identity (slug ID が再抽出で変わる) | **Done (v0.6)** | UUID + `paper_registry.json` |
+| Search entry (属性検索のみ) | **Done (v0.5)** | `search_papers` |
+| Graph traversal (1-hop のみ) | **Done (v0.5)** | `explore_paper_graph` |
+| MCP contract tests | **Done (v0.6)** | `litgraph test-mcp` |
+| Entity resolution (重複 Method/Task) | **Done (v0.7)** | catalog fuzzy merge + optional LLM |
+| MCP tool surface (14 → 6 ツール) | **Done (v0.7)** | 6 コアクエリツール; ingest は CLI のみ |
+| PDF parsing | Active | セクションパターン拡張; 診断出力 (I04) |
+| Graph UI | Active | 論文プレビューカード (I08) |
+| MCP stability | Active | Kuzu 単一ライター方針の文書化 |
+| Zotero | Partial | bib sync のみ; フル PDF パイプラインは v0.11 (I02) |
+| md parser | Deferred | 単一論文ノートのみ |
+| Neo4j migration | Deferred | Kuzu からの移行ツールなし |
+| Claim-level embeddings | Deferred | 論文レベル埋め込みのみ |
 
-v0.7.0 uses a **big-bang** cut to **6 MCP query tools**; removed tool names return a one-release redirect JSON (not listed in `tools/list`).
-
----
-
-## v1.0 — Production OSS
-
-- [ ] **PyPI release** — packaging and stable public API
-- [ ] **Documentation and tutorial** — init → extract → MCP → viz; agent + data-plane workflow
-- [ ] **PDF section detection** — Related Work, Background, References patterns
-- [ ] **Graph UI paper sidebar** — preview cards instead of CGC file tree
-- [x] **MCP graph neighborhood tools** — `get_paper_neighbors`, `expand_paper_graph`
-- [x] **MCP search entry** — `search_papers`
-- [x] **Paper identity v0.6** — UUID registry + stable IDs
-- [x] **MCP full tool tests** — contract + agent workflows + `litgraph test-mcp`
-- [ ] **Team sharing** — multi-user graph, shared `.litgraph` or remote DB
-- [ ] **MCP `watch_papers_directory`** (optional)
+**意図的にエージェントへ委譲:** ギャップクラスタリング、`generate_related_work_outline` による Related Work 草稿。
 
 ---
 
-## Migrating to v0.6 (UUID paper_id)
+## Version roadmap
 
-Re-index required (no migrate script):
+### v0.7 — MCP tool consolidation ✅
+
+- [x] `explore_paper_graph` — `get_paper_neighbors` + `expand_paper_graph` を統合
+- [x] 属性検索・マトリクス・Related Work 草稿・ジョブ管理を MCP から除去 → CLI
+- [x] `get_evidence_for_claim` を `summarize_paper` に統合
+- [x] MCP テスト & Cursor skill を 6 ツールに更新
+- [x] Entity resolution（`entity_catalog.json` + build-time resolver）
+
+### v0.8 — Local UX & graph quality
+
+- [ ] Documentation and tutorial — init → extract → MCP → viz
+- [ ] PDF section detection — Related Work, Background, References パターン (I04)
+- [ ] Graph UI paper sidebar — プレビューカード (I08)
+- [ ] MCP setup wizard — 対話的オンボーディング (I13)
+- [ ] ID / error hints — MCP / CLI の actionable メッセージ (I06)
+
+### v0.9 — Programmatic API & ingest
+
+- [ ] Injectable execution context — `GraphStore`、キャッシュパス、設定を cwd 非依存に (I10)
+- [ ] Programmatic ingest API — `ingest_from_path` / `ingest_from_bytes`
+- [ ] Ingest adapters — `source_ref` プラグイン（ローカルフォルダ、バイト、URL / arXiv）(I02)
+
+### v0.10 — Workspace-scoped graph
+
+- [ ] `workspace_id` on nodes — 全 build / query パスでフィルタ; `(workspace_id, paper_id)` 一意 (I09)
+- [ ] Default workspace — 省略時は `default`（単一 `.litgraph` ワークフローは互換維持）
+- [ ] CLI / MCP context — `--workspace` または `LitgraphContext(workspace_id=...)`
+
+### v0.11 — Zotero full pipeline
+
+**Shipped**
+
+- [x] JSON export import — `litgraph import zotero <export.json>`
+- [x] Web API bib sync — `litgraph import zotero-sync`
+
+**Remaining**
+
+- [ ] Zotero ingest adapter — `source_ref: zotero://{library}/{item_key}` (I02)
+- [ ] `zotero_key` on Paper nodes — `(workspace_id, zotero_key) → paper_id`
+- [ ] PDF attachment fetch — Web API 経由で PDF 取得 → parse → extract → build
+- [ ] Full pipeline sync — bib sync 後に PDF 付き新規 / 変更アイテムを自動 ingest
+- [ ] Collection filter — コレクション単位で workspace に同期
+- [ ] Dedup — `zotero_key` / DOI / `content_hash` で既存論文と照合
+- [ ] Docs & tutorial — Zotero → LGC ワークフロー
+
+**Deferred (post-v1.0):** グループライブラリ、デスクトップ sqlite sync
+
+### v0.12 — Remote MCP & watch (optional; v1.0 後でも可)
+
+- [ ] HTTP MCP transport (I11)
+- [ ] MCP `watch_papers_directory` — フォルダ変更の自動 ingest (I12)
+
+### v1.0 — PyPI release
+
+- [ ] PyPI 公開 — パッケージングと semver 安定の programmatic API（v0.8–v0.11 完了後）
+
+---
+
+## Future expansion (post-v1.0)
+
+同一グラフスキーマと MCP 面; 新しい ingest adapter で拡張。
+
+- [ ] Web pages and documentation
+- [ ] Experiment result CSVs
+- [ ] Code repos
+- [ ] Slides and notebooks
+
+---
+
+## Out of scope
+
+- フリーフォーム知識グラフ（文献レビュー固定スキーマのみ）
+- PDF レイアウト完全復元
+- LGC 内での Related Work 草稿生成・ギャップ事前クラスタリング
+- Graphiti をランタイム依存にすること
+- 認証・課金・マルチテナント SaaS
+
+---
+
+## Migrating to v0.6 (UUID `paper_id`)
+
+再インデックスが必要（移行スクリプトなし）:
 
 ```bash
 rm -rf .litgraph/cache/parsed .litgraph/cache/extracted .litgraph/cache/files.json \
   .litgraph/db .litgraph/paper_id_map.json
 litgraph scan && litgraph parse --all && litgraph extract -y && litgraph build
-# Restart MCP server
-litgraph test-mcp   # verify all tools
+litgraph test-mcp
 ```
 
-`parse --all` is required after clearing caches so files are parsed even when the hash cache reports no changes.
-
----
-
-## Future expansion — beyond papers
-
-Planned after v1.0 stabilizes the paper workflow. Same graph schema and MCP surface; new ingest adapters.
-
-- [ ] **Web pages and documentation**
-- [ ] **Experiment result CSVs**
-- [ ] **Code repos**
-- [ ] **Slides and notebooks**
-
----
-
-## Out of scope (for now)
-
-- Free-form knowledge graph
-- Full PDF layout reconstruction
-- Related work draft generation inside LGC
-- Pre-computed research gap clustering
-- Graphiti framework as a runtime dependency
+`parse --all` はキャッシュクリア後にハッシュキャッシュが「変更なし」と報告しても再パースするために必要。
