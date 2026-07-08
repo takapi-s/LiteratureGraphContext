@@ -21,8 +21,8 @@ When new “knowledge” is discovered, append it here under a suitable heading.
 # Interactive tools / assets
 
 - Keep interactive HTML/JS editors under `playground/` (or the closest non-`docs/` folder for tools).
-- Keep assets for those tools next to the tool (e.g. `playground/idea_matrix/assets/`).
-- Update all references (e.g., `ROADMAP.md` iframe `src`) whenever an asset path changes.
+- Keep diagrams and static assets referenced from docs under `docs/assets/` (e.g. `docs/assets/idea_matrix.drawio.svg`).
+- Update all references (e.g., `ROADMAP.md` image path) whenever an asset path changes.
 
 # When old docs exist
 
@@ -32,6 +32,6 @@ If an existing file under `docs/` becomes redundant:
 
 # Verification checklist
 
-- `rg` confirms no stale references to moved files remain (e.g. `docs/idea_matrix.html`).
-- `ROADMAP.md` iframe and `docs/idea_matrix.md` point to the new IDEA Matrix HTML path.
+- `rg` confirms no stale references to moved files remain (e.g. `playground/idea_matrix/idea_matrix.html`).
+- `ROADMAP.md` image and edit link point to `docs/assets/idea_matrix.drawio.svg`.
 

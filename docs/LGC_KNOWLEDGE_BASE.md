@@ -27,7 +27,7 @@ If you find new knowledge while working on the project, append it here instead o
 To keep `docs/` focused on documentation (Markdown), interactive dev tools and their assets should live outside `docs/`.
 
 - **Interactive HTML/JS editors**: use `playground/`
-- **Images and other assets for those tools**: keep next to the tool under `playground/` (e.g., `playground/idea_matrix/assets/`)
+- **Diagrams and static assets referenced from docs**: use `docs/assets/` (e.g. draw.io SVG)
 
 This makes it easy to evolve the UI without polluting `docs/` rendering workflows.
 
@@ -35,9 +35,8 @@ This makes it easy to evolve the UI without polluting `docs/` rendering workflow
 
 ## IDEA Matrix
 
-- **Viewing**: `ROADMAP.md` embeds the editor with an iframe.
-- **Editing**: open
-  - `playground/idea_matrix/idea_matrix.html`
+- **Viewing**: `ROADMAP.md` embeds `docs/assets/idea_matrix.drawio.svg` as an image (renders on GitHub).
+- **Editing**: open `docs/assets/idea_matrix.drawio.svg` in draw.io / diagrams.net, or the VS Code Draw.io extension.
 
 ---
 
@@ -59,39 +58,37 @@ Use this template when adding new knowledge.
 The repository tracks *hard/uncertain* implementation ideas on a simple **Impact × Difficulty** plot.
 
 Viewing:
-- `ROADMAP.md` embeds the editor via an `iframe`.
+- `ROADMAP.md` embeds `docs/assets/idea_matrix.drawio.svg` as a Markdown image (GitHub-compatible).
 
 Editing:
-- `playground/idea_matrix/idea_matrix.html`
+- `docs/assets/idea_matrix.drawio.svg` in draw.io / diagrams.net, or the VS Code Draw.io extension.
+- After editing, commit the updated SVG so GitHub shows the latest plot.
 
 Interaction model:
 - X axis: **Difficulty** (`Low` → `Medium` → `High`)
 - Y axis: **Impact** (`High` → `Medium` → `Low`)
-- The editor allows continuous placement, but grid buckets roughly map to:
-  - Difficulty buckets (editor viewBox x ranges): `Low` ~[80, 440], `Medium` ~[440, 800], `High` ~[800, 1160]
-  - Impact buckets (editor viewBox y ranges): `High` ~[90, 296.7], `Medium` ~[296.7, 503.3], `Low` ~[503.3, 710]
+- Grid buckets roughly map to:
+  - Difficulty: `Low` (left), `Medium` (center), `High` (right)
+  - Impact: `High` (top), `Medium` (middle), `Low` (bottom)
 
-Editing actions:
-- Drag dots to re-position.
-- Click a dot (or right-side list item) to select it.
-- Edit `Name`, `Notes`, and `Color` in the right pane.
-- Use `Download JSON` / `Copy JSON` / `Import JSON`.
+Conventions:
+- Each idea is a colored dot labeled `I01`, `I02`, … (titles are **not** shown on the plot to avoid overlap).
+- Use the **Idea index** below (also in `ROADMAP.md`) to look up what each ID means.
+- Color hints: `green` = quick win, `amber` = medium effort, `red` = hard/high leverage, `blue`/`purple`/`pink` = area themes, `gray` = housekeeping.
+- Within the same difficulty/impact cell, dots are stacked vertically so they do not overlap.
 
-JSON format:
-```json
-{
-  "ideas": [
-    { "id": "I01", "name": "...", "notes": "...", "color": "green", "x": 130, "y": 135 }
-  ]
-}
-```
+### Idea index (I01–I08)
 
-Notes:
-- `x`/`y` are stored in the editor SVG `viewBox` coordinate space:
-  - `x`: 0..1200 (clamped ~90..1150)
-  - `y`: 0..800 (clamped ~110..690)
-- `id` is stable like `I01`, `I02`, ...
-- `color` is one of `green`, `amber`, `red`, `blue`, `purple`, `pink`, `gray`.
+| ID | Idea | Color |
+|---|---|---|
+| I01 | Hybrid search entry (embeddings + keyword + graph) | red |
+| I02 | New inputs: arXiv/URL/Zotero/CSV connectors | red |
+| I03 | Containment relations: section/subsection + CONTAINS edges | amber |
+| I04 | PDF structure: robust section detection + diagnostics | amber |
+| I05 | Citations: merge refs + bib better (CITES quality) | pink |
+| I06 | ID resolution & errors: actionable hints in MCP/CLI | blue |
+| I07 | Auto-generate `paper_id_map` from `paper_registry` | green |
+| I08 | Graph UI: paper-centric sidebar + preview cards | purple |
 
 ---
 

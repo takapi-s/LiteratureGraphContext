@@ -29,14 +29,22 @@ LiteratureGraphContext is a **structured evidence layer**, not an interpretation
 
 Ideas that are not yet hard-committed are tracked on an **Impact × Difficulty** matrix.
 
-See `docs/LGC_KNOWLEDGE_BASE.md` for IDEA Matrix semantics, interaction model, and JSON format.
+See `docs/LGC_KNOWLEDGE_BASE.md` for IDEA Matrix semantics and editing workflow.
 
-Open the interactive matrix in `playground/idea_matrix/idea_matrix.html`.
+![IDEA Matrix](docs/assets/idea_matrix.drawio.svg)
 
-<iframe
-  src="playground/idea_matrix/idea_matrix.html"
-  style="width:100%; height:520px; border:1px solid #e5e7eb; border-radius:12px; background:#ffffff;"
-></iframe>
+Edit: `docs/assets/idea_matrix.drawio.svg` (draw.io / diagrams.net, or VS Code Draw.io extension)
+
+| ID | Idea |
+|---|---|
+| I01 | Hybrid search entry (embeddings + keyword + graph) |
+| I02 | New inputs: arXiv/URL/Zotero/CSV connectors |
+| I03 | Containment relations: section/subsection + CONTAINS edges |
+| I04 | PDF structure: robust section detection + diagnostics |
+| I05 | Citations: merge refs + bib better (CITES quality) |
+| I06 | ID resolution & errors: actionable hints in MCP/CLI |
+| I07 | Auto-generate `paper_id_map` from `paper_registry` |
+| I08 | Graph UI: paper-centric sidebar + preview cards |
 
 ## Known limitations — and how we address them
 
