@@ -13,8 +13,8 @@ description: >-
 
 - Setting up or refreshing a papers folder into a queryable literature graph.
 - Explaining `litgraph` CLI, `.litgraph` config, or MCP wiring in Cursor.
-- Interpreting LGC MCP tools: `list_papers`, `find_limitations`, `get_paper_neighbors`, `build_literature_matrix`, etc.
-- Drafting related work from graph context (outline + matrix + evidence; prose and gap interpretation stay with the MCP client).
+- Interpreting LGC MCP tools: `list_papers`, `search_papers`, `summarize_paper`, `compare_papers`, `find_limitations`, `explore_paper_graph`.
+- Drafting related work from graph context (compare + limitations + evidence; prose and gap interpretation stay with the MCP client).
 
 ## Design philosophy
 
@@ -27,10 +27,10 @@ A typical agent flow for literature questions:
 
 ```text
 search_papers("ambiguous topic")   # always first for discovery
+→ summarize_paper(paper_id)        # details + claims with evidence
 → compare_papers([paper_ids])
-→ summarize_paper(paper_id)        # details from search result IDs
 → find_limitations(topic=...) or find_limitations(paper_id=...)
-→ get_paper_neighbors(paper_id)
+→ explore_paper_graph(paper_id, hops=1|2)
 → agent synthesizes, citing paper_id / title / page / evidence_text
 ```
 
@@ -56,31 +56,25 @@ Supported inputs under `papers_dir`: `.pdf` (full pipeline), `.md` (notes), `.bi
 - CLI and MCP must share the same project root and graph DB.
 - After upgrading LGC, restart the MCP server so Cursor picks up tool list changes.
 
-## MCP tools
+## MCP tools (v0.7 — 6 tools)
 
 | Tool | Use for |
 |---|---|
 | `list_papers` | All indexed papers |
-| `search_papers` | Natural-language entry: returns `paper_id`, title, score, match_reason |
-| `summarize_paper` | One paper by `paper_id` |
-| `find_papers_by_method` / `find_papers_by_task` | Method or task search |
+| `search_papers` | Natural-language entry: returns `paper_id`, title, score, match_reason. Use `center_paper_id` to boost papers near a seed in the citation graph. |
+| `summarize_paper` | One paper by `paper_id` (tasks, methods, datasets, contributions, limitations, **claims** with evidence) |
+| `compare_papers` | Side-by-side comparison of multiple papers |
 | `find_limitations` | Limitations by `topic` and/or `paper_id` (with evidence) |
-| `get_evidence_for_claim` | Evidence for a `claim_id` |
-| `compare_papers` | Side-by-side comparison |
-| `build_literature_matrix` | Topic matrix across papers |
-| `get_paper_neighbors` | Neighbors via CITES, CITED_BY, CONTRASTS_WITH, EXTENDS (`relationships`, `include_summary` optional) |
-| `expand_paper_graph` | Multi-hop BFS from a seed paper (`hops`, `relationships` optional) |
-| `generate_related_work_outline` | Section outline with supporting papers |
-| `list_jobs` / `check_job_status` | Background `extract --background` jobs |
+| `explore_paper_graph` | Graph neighbors from a seed paper: `hops=1` for direct neighbors, `hops>=2` for multi-hop lineage |
 
-**Removed:** `find_research_gaps` — use `find_limitations` + `get_paper_neighbors` + `compare_papers`; let the agent interpret gaps.
+**CLI-only (removed from MCP in v0.7):** `find_papers_by_method/task` → `litgraph query papers --method/--task`; `build_literature_matrix` → `litgraph query matrix`; jobs → `litgraph jobs`. Old MCP tool names return a redirect JSON with the replacement hint.
 
 ## Agent behavior
 
 - Run **scan → parse → extract → build** before deep graph queries if the user has not indexed yet.
 - **`extract` calls an external LLM**; confirm or use `litgraph extract -y` only when appropriate. Already-extracted papers are skipped unless `--force`.
 - When answering from graph data, **cite `paper_id`, title, page, section, and `evidence_text`** when available.
-- Related work **draft prose** and **gap interpretation** are out of scope for LGC; use `generate_related_work_outline`, `find_limitations`, `get_paper_neighbors`, and `build_literature_matrix` as context for the client model.
+- Related work **draft prose** and **gap interpretation** are out of scope for LGC; use `compare_papers`, `find_limitations`, and `explore_paper_graph` as context for the client model.
 - `litgraph watch` defaults to scan → parse → build (no LLM); pass `--auto-extract` for full pipeline on file changes (confirmation auto-skipped). Changes queue while a batch is processing.
 - Optional: `litgraph viz` for local graph UI; `litgraph test-mcp` to smoke-test all MCP tools; `litgraph import zotero-sync` for Zotero Web API bib cache.
 

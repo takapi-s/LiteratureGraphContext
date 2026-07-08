@@ -30,3 +30,35 @@ def test_expand_paper_graph_unknown_paper(project_tmp):
     finder = PaperFinder(ctx.db_path)
     result = finder.expand_paper_graph("missing_paper")
     assert "error" in result
+
+
+def test_explore_paper_graph_shared_method(project_tmp):
+    from litgraph.cli.config_manager import init_project, resolve_context
+
+    init_project(project_tmp)
+    write_fixtures(project_tmp / ".litgraph" / "cache" / "extracted")
+    ctx = resolve_context(project_tmp)
+    build_graph(ctx, FIXTURES)
+
+    finder = PaperFinder(ctx.db_path)
+    result = finder.explore_paper_graph(
+        "mobility_gnn_2024",
+        hops=2,
+        relationships=["SHARED_METHOD"],
+    )
+    assert result["paper_id"] == "mobility_gnn_2024"
+    assert result["hops"] == 2
+    assert "nodes" in result
+
+
+def test_explore_paper_graph_unknown_paper(project_tmp):
+    from litgraph.cli.config_manager import init_project, resolve_context
+
+    init_project(project_tmp)
+    write_fixtures(project_tmp / ".litgraph" / "cache" / "extracted")
+    ctx = resolve_context(project_tmp)
+    build_graph(ctx, FIXTURES)
+
+    finder = PaperFinder(ctx.db_path)
+    result = finder.explore_paper_graph("missing_paper")
+    assert "error" in result

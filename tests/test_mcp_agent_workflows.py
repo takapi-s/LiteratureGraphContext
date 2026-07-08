@@ -14,11 +14,12 @@ def test_ambiguous_search_then_summarize(project_tmp, monkeypatch):
     summary = mcp_call(server, "summarize_paper", {"paper_id": paper_id})
     assert "error" not in summary
     assert summary.get("title")
+    assert "claims" in summary
 
 
-def test_task_search_then_compare(project_tmp, monkeypatch):
+def test_search_then_compare(project_tmp, monkeypatch):
     server = setup_mcp_project(project_tmp, monkeypatch)
-    found = mcp_call(server, "find_papers_by_task", {"task": "mobility prediction"})
+    found = mcp_call(server, "search_papers", {"query": "mobility prediction"})
     ids = [p["paper_id"] for p in found["papers"]]
     assert ids
     compare = mcp_call(server, "compare_papers", {"paper_ids": ids[:2]})
@@ -26,13 +27,14 @@ def test_task_search_then_compare(project_tmp, monkeypatch):
     assert compare["papers"]
 
 
-def test_method_search_then_neighbors(project_tmp, monkeypatch):
+def test_search_then_explore_graph(project_tmp, monkeypatch):
     server = setup_mcp_project(project_tmp, monkeypatch)
-    found = mcp_call(server, "find_papers_by_method", {"method": "GNN"})
+    found = mcp_call(server, "search_papers", {"query": "GNN"})
     assert found["papers"]
     paper_id = found["papers"][0]["paper_id"]
-    neighbors = mcp_call(server, "get_paper_neighbors", {"paper_id": paper_id})
-    assert "neighbors" in neighbors
+    graph = mcp_call(server, "explore_paper_graph", {"paper_id": paper_id, "hops": 1})
+    assert "nodes" in graph
+    assert graph["hops"] == 1
 
 
 def test_list_papers_id_consistency(project_tmp, monkeypatch):
@@ -62,7 +64,14 @@ def test_full_literature_review_chain(project_tmp, monkeypatch):
     assert ids
     compare = mcp_call(server, "compare_papers", {"paper_ids": ids})
     assert "error" not in compare
-    outline = mcp_call(server, "generate_related_work_outline", {"topic": "GNN"})
-    assert outline.get("sections")
     limits = mcp_call(server, "find_limitations", {"topic": "graph"})
     assert "limitations" in limits
+    graph = mcp_call(server, "explore_paper_graph", {"paper_id": ids[0], "hops": 2})
+    assert "nodes" in graph
+
+
+def test_deprecated_tool_redirect(project_tmp, monkeypatch):
+    server = setup_mcp_project(project_tmp, monkeypatch)
+    payload = mcp_call(server, "get_paper_neighbors", {"paper_id": "mobility_gnn_2024"})
+    assert payload.get("deprecated") is True
+    assert payload.get("use_instead") == "explore_paper_graph"

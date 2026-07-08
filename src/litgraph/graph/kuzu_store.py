@@ -377,6 +377,12 @@ class KuzuGraphStore(GraphQueryInterface):
             "l.page AS page, l.section AS section, l.evidence_text AS evidence_text",
             {"id": paper_id},
         ))
+        paper["claims"] = self._rows(self._execute(
+            "MATCH (p:Paper {id: $id})-[:HAS_CLAIM]->(c:Claim) "
+            "RETURN c.id AS claim_id, c.text AS text, c.text AS claim, "
+            "c.page AS page, c.section AS section, c.evidence_text AS evidence_text",
+            {"id": paper_id},
+        ))
         return paper
 
     def _papers_for_compare(self, paper_ids: List[str]) -> List[Dict[str, Any]]:

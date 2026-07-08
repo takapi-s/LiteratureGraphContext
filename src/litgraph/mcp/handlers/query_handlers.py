@@ -42,6 +42,23 @@ def handle_compare_papers(finder: PaperFinder, paper_ids: List[str]) -> Dict[str
     return _service(finder).handle_tool_call("compare_papers", {"paper_ids": paper_ids})
 
 
+def handle_explore_paper_graph(
+    finder: PaperFinder,
+    paper_id: str,
+    hops: int = 1,
+    relationships: List[str] | None = None,
+    include_summary: bool = False,
+) -> Dict[str, Any]:
+    args: Dict[str, Any] = {
+        "paper_id": paper_id,
+        "hops": hops,
+        "include_summary": include_summary,
+    }
+    if relationships is not None:
+        args["relationships"] = relationships
+    return _service(finder).handle_tool_call("explore_paper_graph", args)
+
+
 def handle_build_literature_matrix(finder: PaperFinder, topic: str) -> Dict[str, Any]:
     return _service(finder).handle_tool_call("build_literature_matrix", {"topic": topic})
 

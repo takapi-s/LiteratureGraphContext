@@ -1,6 +1,6 @@
 # LiteratureGraphContext Roadmap
 
-> **Current version**: 0.6.0  
+> **Current version**: 0.7.0  
 > **Last updated**: 2026-07
 
 Tracks **remaining work**, known limitations, and out-of-scope items.  
@@ -112,12 +112,14 @@ v0.6 exposes **14 MCP tools**. Agents must choose among overlapping entry points
 
 ## v0.7 — MCP tool consolidation
 
-- [ ] **`explore_paper_graph`** — merge `get_paper_neighbors` + `expand_paper_graph` (`hops` parameter)
-- [ ] **Deprecate attribute search on MCP** — `find_papers_by_method`, `find_papers_by_task` → CLI only; optional `search_mode` on `search_papers`
-- [ ] **Remove agent-sugar tools from MCP** — `generate_related_work_outline`, `build_literature_matrix`
-- [ ] **Remove ingest tools from MCP** — `list_jobs`, `check_job_status` → CLI only
-- [ ] **Fold claim evidence** — `get_evidence_for_claim` into `summarize_paper` or defer
-- [ ] **Update MCP tests & skill** — `test-mcp`, smoke cases, Cursor skill to ≤ 7 tools
+- [x] **`explore_paper_graph`** — merge `get_paper_neighbors` + `expand_paper_graph` (`hops` parameter)
+- [x] **Deprecate attribute search on MCP** — `find_papers_by_method`, `find_papers_by_task` → CLI only (redirect on old MCP names)
+- [x] **Remove agent-sugar tools from MCP** — `generate_related_work_outline`, `build_literature_matrix`
+- [x] **Remove ingest tools from MCP** — `list_jobs`, `check_job_status` → CLI only
+- [x] **Fold claim evidence** — `get_evidence_for_claim` into `summarize_paper`
+- [x] **Update MCP tests & skill** — `test-mcp`, smoke cases, Cursor skill to 6 tools
+
+v0.7.0 uses a **big-bang** cut to **6 MCP query tools**; removed tool names return a one-release redirect JSON (not listed in `tools/list`).
 
 ---
 

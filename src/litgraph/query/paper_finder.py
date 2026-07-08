@@ -94,6 +94,7 @@ class PaperFinder:
             "metrics": paper.get("metrics", []),
             "contributions": paper.get("contributions", []),
             "limitations": paper.get("limitations", []),
+            "claims": paper.get("claims", []),
         }
 
     def find_papers_by_method(self, method: str, fuzzy: bool = True) -> List[Dict[str, Any]]:
@@ -197,6 +198,40 @@ class PaperFinder:
             "title": (self.get_paper(resolved) or {}).get("title"),
             "papers": papers,
             "count": len(papers),
+        }
+
+    def explore_paper_graph(
+        self,
+        paper_id: str,
+        hops: int = 1,
+        relationships: Optional[List[str]] = None,
+        include_summary: bool = False,
+    ) -> Dict[str, Any]:
+        resolved = self._resolve_paper_id(paper_id)
+        paper = self.get_paper(resolved)
+        if not paper:
+            return self._paper_not_found_error(paper_id)
+        hop_count = max(int(hops), 1)
+        if hop_count == 1:
+            raw_nodes = self.store.get_paper_neighbors(
+                resolved,
+                relationships=relationships,
+                include_summary=include_summary,
+            )
+            nodes = [{**node, "hop": 1} for node in raw_nodes]
+        else:
+            nodes = self.store.expand_paper_graph(
+                resolved,
+                hops=hop_count,
+                relationships=relationships,
+                include_summary=include_summary,
+            )
+        return {
+            "paper_id": resolved,
+            "title": paper.get("title"),
+            "hops": hop_count,
+            "nodes": nodes,
+            "count": len(nodes),
         }
 
     def search_papers(

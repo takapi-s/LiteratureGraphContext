@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from litgraph.mcp.server import MCPServer
 
 
-def test_mcp_get_paper_neighbors(project_tmp, monkeypatch):
+def test_mcp_explore_paper_graph(project_tmp, monkeypatch):
     monkeypatch.chdir(project_tmp)
     from litgraph.cli.config_manager import init_project, resolve_context
     from tests.fixtures.extracted_fixtures import build_fixture_graph, write_fixtures
@@ -21,24 +21,24 @@ def test_mcp_get_paper_neighbors(project_tmp, monkeypatch):
         "params": {},
     })
     names = {t["name"] for t in resp["result"]["tools"]}
-    assert "get_paper_neighbors" in names
-    assert "find_research_gaps" not in names
-    assert "generate_related_work_outline" in names
+    assert "explore_paper_graph" in names
+    assert "get_paper_neighbors" not in names
+    assert "generate_related_work_outline" not in names
 
     call = server.handle_request({
         "jsonrpc": "2.0",
         "id": 11,
         "method": "tools/call",
         "params": {
-            "name": "get_paper_neighbors",
-            "arguments": {"paper_id": "mobility_gnn_2024"},
+            "name": "explore_paper_graph",
+            "arguments": {"paper_id": "mobility_gnn_2024", "hops": 1},
         },
     })
     payload = json.loads(call["result"]["content"][0]["text"])
-    assert "neighbors" in payload
+    assert "nodes" in payload
 
 
-def test_mcp_related_work_outline(project_tmp, monkeypatch):
+def test_mcp_deprecated_related_work_outline(project_tmp, monkeypatch):
     monkeypatch.chdir(project_tmp)
     from litgraph.cli.config_manager import init_project, resolve_context
     from tests.fixtures.extracted_fixtures import build_fixture_graph, write_fixtures
@@ -58,7 +58,7 @@ def test_mcp_related_work_outline(project_tmp, monkeypatch):
         },
     })
     payload = json.loads(call["result"]["content"][0]["text"])
-    assert "markdown_outline" in payload
+    assert payload.get("deprecated") is True
 
 
 def test_zotero_sync_mock(project_tmp):

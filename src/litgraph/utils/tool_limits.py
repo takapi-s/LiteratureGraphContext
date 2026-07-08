@@ -69,7 +69,7 @@ def truncate_results(data: Any, max_items: int = 50) -> Any:
     if isinstance(data, list) and len(data) > max_items:
         return data[:max_items] + [{"_truncated": True, "total": len(data)}]
     if isinstance(data, dict):
-        for key in ("papers", "limitations", "claims", "results", "gaps"):
+        for key in ("papers", "limitations", "claims", "nodes", "results", "gaps"):
             if key in data and isinstance(data[key], list) and len(data[key]) > max_items:
                 out = dict(data)
                 out[key] = data[key][:max_items]

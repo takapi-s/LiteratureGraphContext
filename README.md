@@ -27,7 +27,7 @@ User: "What are the gaps in prediction research?"
 
   Agent → search_papers("prediction research")
         → find_limitations("prediction")   # or paper_id= from search
-        → get_paper_neighbors(paper_id)    # CITES / CONTRASTS_WITH / EXTENDS
+        → explore_paper_graph(paper_id, hops=1|2)
         → compare_papers([...])
 
   Agent synthesizes the answer, citing paper_id / page / evidence_text from MCP
