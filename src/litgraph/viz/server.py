@@ -27,8 +27,7 @@ def _resolve_static_dir() -> Path:
 
 
 def _graph_payload(ctx: ResolvedContext) -> dict[str, Any]:
-    store = _store_for(ctx)
-    store.initialize_schema()
+    store = _store_for(ctx, read_only=True)
     try:
         return to_playground_graph(store.export_graph_json())
     finally:

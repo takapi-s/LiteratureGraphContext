@@ -48,6 +48,7 @@ class MCPToolService:
             aliases_path=self.ctx.aliases_path,
             backend=backend,
             neo4j_config=_neo4j_config(self.ctx),
+            read_only=True,
         )
 
     @property

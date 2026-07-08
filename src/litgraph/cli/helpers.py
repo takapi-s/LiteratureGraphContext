@@ -37,13 +37,14 @@ def get_job_manager() -> JobManager:
     return _job_manager
 
 
-def _finder(ctx: ResolvedContext) -> PaperFinder:
+def _finder(ctx: ResolvedContext, *, read_only: bool = True) -> PaperFinder:
     backend = str(get_config_value(ctx, "database", "LITGRAPH_DATABASE"))
     return PaperFinder(
         ctx.db_path,
         aliases_path=ctx.aliases_path,
         backend=backend,
         neo4j_config=_neo4j_config(ctx),
+        read_only=read_only,
     )
 
 
