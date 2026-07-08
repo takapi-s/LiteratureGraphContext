@@ -9,7 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Set
 
+# Long-running litgraph commands that may connect to Kuzu.
 LITGRAPH_LOCK_COMMANDS: Set[str] = {"watch", "serve-mcp", "viz"}
+# Only these hold a write lock; serve-mcp and viz use read-only connections.
+LITGRAPH_WRITE_LOCK_COMMANDS: Set[str] = {"watch"}
 
 
 @dataclass(frozen=True)
@@ -125,9 +128,11 @@ def release_db_lock(
     exclude_pid: Optional[int] = None,
     wait_seconds: float = 1.5,
 ) -> List[LitgraphProcess]:
-    """Stop sibling litgraph processes that hold the same Kuzu database lock."""
+    """Stop sibling litgraph processes that hold a Kuzu write lock."""
     stopped: List[LitgraphProcess] = []
     for proc in find_conflicting_processes(db_path, exclude_pid=exclude_pid):
+        if proc.command not in LITGRAPH_WRITE_LOCK_COMMANDS:
+            continue
         try:
             os.kill(proc.pid, signal.SIGTERM)
             stopped.append(proc)
