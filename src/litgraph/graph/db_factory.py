@@ -13,6 +13,8 @@ def get_graph_store(
     db_path: Path,
     backend: Optional[str] = None,
     neo4j_config: Optional[Dict[str, Any]] = None,
+    *,
+    read_only: bool = False,
 ) -> GraphQueryInterface:
     """Return a graph store for the configured backend."""
     name = (backend or "kuzu").strip().lower()
@@ -20,4 +22,4 @@ def get_graph_store(
         from litgraph.graph.neo4j_store import Neo4jGraphStore
 
         return Neo4jGraphStore(neo4j_config or {})
-    return KuzuGraphStore(db_path)
+    return KuzuGraphStore(db_path, read_only=read_only)

@@ -32,20 +32,25 @@ REL_EXPORT_QUERIES: List[Tuple[str, str, str]] = [
 
 
 class KuzuGraphStore(GraphQueryInterface):
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, read_only: bool = False) -> None:
         self.db_path = db_path
+        self.read_only = read_only
         self._db: Optional[kuzu.Database] = None
         self._conn: Optional[kuzu.Connection] = None
+
+    def _open_database(self) -> kuzu.Database:
+        return kuzu.Database(str(self.db_path), read_only=self.read_only)
 
     def _connect(self) -> kuzu.Connection:
         if self._conn is not None:
             return self._conn
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.read_only:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            self._db = kuzu.Database(str(self.db_path))
+            self._db = self._open_database()
             self._conn = kuzu.Connection(self._db)
         except RuntimeError as exc:
-            if "Could not set lock" not in str(exc):
+            if self.read_only or "Could not set lock" not in str(exc):
                 raise
             from litgraph.utils.db_lock import release_db_lock
 
@@ -54,7 +59,7 @@ class KuzuGraphStore(GraphQueryInterface):
                 raise
             names = ", ".join(f"{proc.command}(pid={proc.pid})" for proc in stopped)
             print(f"Released Kuzu lock by stopping: {names}", file=sys.stderr)
-            self._db = kuzu.Database(str(self.db_path))
+            self._db = self._open_database()
             self._conn = kuzu.Connection(self._db)
         return self._conn
 
@@ -65,6 +70,8 @@ class KuzuGraphStore(GraphQueryInterface):
         return conn.execute(query)
 
     def initialize_schema(self) -> None:
+        if self.read_only:
+            return
         statements = [
             "CREATE NODE TABLE IF NOT EXISTS Paper(id STRING PRIMARY KEY, title STRING, year INT64)",
             "CREATE NODE TABLE IF NOT EXISTS Author(id STRING PRIMARY KEY, name STRING)",

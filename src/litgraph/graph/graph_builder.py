@@ -27,9 +27,14 @@ def _neo4j_config(ctx: ResolvedContext) -> Dict[str, Any]:
     }
 
 
-def _store_for(ctx: ResolvedContext):
+def _store_for(ctx: ResolvedContext, *, read_only: bool = False):
     backend = str(get_config_value(ctx, "database", "LITGRAPH_DATABASE"))
-    return get_graph_store(ctx.db_path, backend=backend, neo4j_config=_neo4j_config(ctx))
+    return get_graph_store(
+        ctx.db_path,
+        backend=backend,
+        neo4j_config=_neo4j_config(ctx),
+        read_only=read_only,
+    )
 
 
 def build_graph(

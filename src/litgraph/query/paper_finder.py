@@ -20,10 +20,13 @@ class PaperFinder:
         aliases_path: Optional[Path] = None,
         backend: str = "kuzu",
         neo4j_config: Optional[Dict[str, Any]] = None,
+        *,
+        read_only: bool = False,
     ) -> None:
         self.db_path = db_path
         self.backend = backend
         self.neo4j_config = neo4j_config
+        self.read_only = read_only
         self.aliases_path = aliases_path or (db_path.parent.parent / "aliases.yaml")
         self.litgraph_dir = db_path.parent.parent
         self._store = None
@@ -35,8 +38,14 @@ class PaperFinder:
             self._closed = False
             self._store = None
         if self._store is None:
-            self._store = get_graph_store(self.db_path, backend=self.backend, neo4j_config=self.neo4j_config)
-            self._store.initialize_schema()
+            self._store = get_graph_store(
+                self.db_path,
+                backend=self.backend,
+                neo4j_config=self.neo4j_config,
+                read_only=self.read_only,
+            )
+            if not self.read_only:
+                self._store.initialize_schema()
         return self._store
 
     def close(self) -> None:
