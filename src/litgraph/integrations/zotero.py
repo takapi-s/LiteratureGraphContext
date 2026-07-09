@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -146,12 +147,10 @@ def sync_zotero_library(
     api_key: Optional[str] = None,
     collection_key: Optional[str] = None,
     full_sync: bool = False,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Sync Zotero library via Web API into bib cache."""
-    uid = user_id or os.getenv("ZOTERO_USER_ID", "")
-    key = api_key or os.getenv("ZOTERO_API_KEY", "")
-    if not uid or not key:
-        raise ValueError("ZOTERO_USER_ID and ZOTERO_API_KEY are required for live sync")
+    uid, key = _resolve_zotero_credentials(user_id, api_key, config)
 
     state = load_sync_state(bib_cache_dir)
     since = None if full_sync else state.get("last_version")
@@ -209,6 +208,130 @@ def _load_cached_zotero_entries(bib_cache_dir: Path) -> List[Dict[str, Any]]:
 
 def _count_cached_entries(bib_cache_dir: Path) -> int:
     return len(_load_cached_zotero_entries(bib_cache_dir))
+
+
+def _resolve_zotero_credentials(
+    user_id: Optional[str] = None,
+    api_key: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> tuple[str, str]:
+    cfg = config or {}
+    uid = (
+        user_id
+        or os.getenv("ZOTERO_USER_ID", "")
+        or str(cfg.get("zotero_user_id") or "")
+    ).strip()
+    key = (
+        api_key
+        or os.getenv("ZOTERO_API_KEY", "")
+        or str(cfg.get("zotero_api_key") or "")
+    ).strip()
+    if not uid or not key:
+        raise ValueError("ZOTERO_USER_ID and ZOTERO_API_KEY are required for Zotero sync")
+    return uid, key
+
+
+def fetch_item_children(user_id: str, api_key: str, item_key: str) -> List[Dict[str, Any]]:
+    with httpx.Client(timeout=60.0, headers=_api_headers(api_key)) as client:
+        resp = client.get(f"{ZOTERO_API}/users/{user_id}/items/{item_key}/children")
+        resp.raise_for_status()
+        return resp.json()
+
+
+def fetch_pdf_for_item(user_id: str, api_key: str, item_key: str) -> Optional[bytes]:
+    """Download the first PDF attachment for a Zotero item."""
+    children = fetch_item_children(user_id, api_key, item_key)
+    for child in children:
+        data = child.get("data") or child
+        if data.get("itemType") != "attachment":
+            continue
+        content_type = (data.get("contentType") or "").lower()
+        if "pdf" not in content_type and data.get("linkMode") != "imported_file":
+            continue
+        attachment_key = data.get("key") or data.get("itemKey")
+        if not attachment_key:
+            continue
+        with httpx.Client(timeout=120.0, headers=_api_headers(api_key)) as client:
+            file_resp = client.get(
+                f"{ZOTERO_API}/users/{user_id}/items/{attachment_key}/file",
+                follow_redirects=True,
+            )
+            if file_resp.status_code == 200 and file_resp.content:
+                return file_resp.content
+    return None
+
+
+def sync_zotero_with_pdfs(
+    ctx: Any,
+    *,
+    collection_key: Optional[str] = None,
+    full_sync: bool = False,
+    extract: bool = True,
+    build: bool = True,
+) -> Dict[str, Any]:
+    """Sync bib metadata then ingest PDF attachments for changed items."""
+    from litgraph.context import LitgraphContext
+
+    uid, key = _resolve_zotero_credentials(config=ctx.config)
+    bib_result = sync_zotero_library(
+        ctx.bib_cache_dir,
+        user_id=uid,
+        api_key=key,
+        collection_key=collection_key,
+        full_sync=full_sync,
+    )
+    entries = _load_cached_zotero_entries(ctx.bib_cache_dir)
+    lctx = LitgraphContext(
+        project_root=ctx.project_root,
+        workspace_id=ctx.workspace_id,
+        load_env_files=False,
+    )
+    ingested = 0
+    skipped = 0
+    errors: List[str] = []
+    for entry in entries:
+        zkey = str(entry.get("zotero_key") or entry.get("bib_key") or "")
+        if not zkey:
+            continue
+        source_ref = f"zotero://{uid}/{zkey}"
+        try:
+            pdf = fetch_pdf_for_item(uid, key, zkey)
+            if not pdf:
+                skipped += 1
+                continue
+            result = lctx.ingest_from_bytes(
+                pdf,
+                filename=f"zotero_{zkey}.pdf",
+                source_ref=source_ref,
+                extract=extract,
+                build=False,
+            )
+            if entry.get("doi"):
+                from litgraph.ingest.dedup import register_paper_identity
+
+                register_paper_identity(
+                    ctx.litgraph_dir,
+                    result.source_path,
+                    result.paper_id,
+                    workspace_id=ctx.workspace_id,
+                    content_hash=hashlib.sha256(pdf).hexdigest(),
+                    source_ref=source_ref,
+                    zotero_key=zkey,
+                    doi=str(entry.get("doi") or ""),
+                )
+            ingested += 1
+        except Exception as exc:
+            errors.append(f"{zkey}: {exc}")
+    if build and ingested:
+        from litgraph.cli.helpers import build_paper_graph
+
+        build_paper_graph(ctx)
+    return {
+        **bib_result,
+        "pdfs_ingested": ingested,
+        "pdfs_skipped": skipped,
+        "pdf_errors": errors,
+    }
 
 
 def import_zotero_export(path: Path, bib_cache_dir: Path) -> List[Dict[str, Any]]:
