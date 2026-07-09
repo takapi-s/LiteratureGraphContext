@@ -97,3 +97,18 @@ def remove_from_cache(cache_path: Path, rel_path: str) -> None:
     if rel_path in cache:
         del cache[rel_path]
         save_cache(cache_path, cache)
+
+
+def update_cache_entry(
+    cache_path: Path,
+    rel_path: str,
+    sha256: str,
+    size: int,
+) -> None:
+    cache = load_cache(cache_path)
+    cache[rel_path] = {
+        "sha256": sha256,
+        "size": size,
+        "modified_at": _utc_now_iso(),
+    }
+    save_cache(cache_path, cache)
