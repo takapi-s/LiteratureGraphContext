@@ -1,3 +1,6 @@
 """LiteratureGraphContext — paper PDFs to knowledge graph."""
 
-__version__ = "0.8.0"
+from litgraph.context import IngestResult, LitgraphContext
+
+__version__ = "0.12.0"
+__all__ = ["LitgraphContext", "IngestResult", "__version__"]

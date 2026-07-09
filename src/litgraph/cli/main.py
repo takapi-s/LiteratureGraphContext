@@ -13,7 +13,7 @@ from rich.console import Console
 
 from litgraph import __version__
 from litgraph.cli import config_manager, helpers
-from litgraph.cli.config_manager import ProjectNotFoundError, ResolvedContext
+from litgraph.cli.config_manager import ProjectNotFoundError, ResolvedContext, workspace_from_env
 from litgraph.mcp.setup_wizard import run_setup_wizard
 
 app = typer.Typer(name="litgraph", help="LiteratureGraphContext: papers to knowledge graph.")
@@ -24,12 +24,19 @@ app.add_typer(config_app, name="config")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(query_app, name="query")
 console = Console(stderr=True)
+_workspace_option = typer.Option(
+    workspace_from_env(),
+    "--workspace",
+    "-w",
+    help="Workspace id for scoped graph operations (default: default)",
+)
 
 
-def _ctx(*, quiet: bool = False) -> ResolvedContext:
+def _ctx(*, quiet: bool = False, workspace: Optional[str] = None) -> ResolvedContext:
     """Resolve project context or exit with an actionable error message."""
+    ws = workspace if workspace is not None else _active_workspace()
     try:
-        ctx = config_manager.resolve_context()
+        ctx = config_manager.resolve_context(workspace_id=ws)
     except ProjectNotFoundError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -37,14 +44,22 @@ def _ctx(*, quiet: bool = False) -> ResolvedContext:
         papers = ctx.config.get("papers_dir", "papers")
         console.print(
             f"[dim][litgraph] project: {ctx.project_root} "
-            f"(papers_dir: {papers})[/dim]"
+            f"(papers_dir: {papers}, workspace: {ctx.workspace_id})[/dim]"
         )
     return ctx
 
 
 @app.callback()
-def main() -> None:
+def main(
+    workspace: str = _workspace_option,
+) -> None:
     config_manager.load_env()
+    # workspace is resolved per-command via _ctx(workspace=workspace)
+    main._workspace = workspace  # type: ignore[attr-defined]
+
+
+def _active_workspace() -> Optional[str]:
+    return getattr(main, "_workspace", None)
 
 
 @app.command("init")
@@ -462,15 +477,34 @@ def import_zotero_sync(
     collection: Optional[str] = typer.Option(None, "--collection", help="Zotero collection key"),
     full: bool = typer.Option(False, "--full", help="Full resync instead of incremental"),
     rebuild: bool = typer.Option(False, "--rebuild", help="Rebuild graph after sync"),
+    with_pdfs: bool = typer.Option(False, "--with-pdfs", help="Fetch and ingest PDF attachments after bib sync"),
 ) -> None:
     """Sync Zotero library via Web API (requires ZOTERO_USER_ID and ZOTERO_API_KEY)."""
-    from litgraph.integrations.zotero import sync_zotero_library
+    from litgraph.integrations.zotero import sync_zotero_library, sync_zotero_with_pdfs
 
     ctx = _ctx()
+    if with_pdfs:
+        result = sync_zotero_with_pdfs(
+            ctx,
+            collection_key=collection,
+            full_sync=full,
+            build=rebuild,
+        )
+        console.print(
+            f"Synced {result.get('synced', 0)} bib entries; "
+            f"ingested {result.get('pdfs_ingested', 0)} PDF(s), "
+            f"skipped {result.get('pdfs_skipped', 0)}."
+        )
+        if result.get("pdf_errors"):
+            for err in result["pdf_errors"][:5]:
+                console.print(f"[yellow]{err}[/yellow]")
+        return
+
     result = sync_zotero_library(
         ctx.bib_cache_dir,
         collection_key=collection,
         full_sync=full,
+        config=ctx.config,
     )
     console.print(
         f"Synced {result.get('synced', 0)} entries (version {result.get('last_version')})."
@@ -599,11 +633,15 @@ def test_mcp_cmd(
 
 
 @app.command("serve-mcp")
-def serve_mcp() -> None:
-    """Start MCP stdio server."""
+def serve_mcp(
+    http: bool = typer.Option(False, "--http", help="Use Streamable HTTP transport instead of stdio"),
+    host: str = typer.Option("127.0.0.1", "--host", help="HTTP bind host (with --http)"),
+    port: int = typer.Option(8000, "--port", help="HTTP bind port (with --http)"),
+) -> None:
+    """Start MCP server (stdio by default, or HTTP with --http)."""
     from litgraph.mcp.server import MCPServer
 
-    MCPServer().run()
+    MCPServer().run(http=http, host=host, port=port)
 
 
 @mcp_app.command("setup")
