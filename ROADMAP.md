@@ -1,6 +1,6 @@
 # LiteratureGraphContext Roadmap
 
-> **Current version**: 0.8.0  
+> **Current version**: 0.12.0  
 > **Last updated**: 2026-07
 
 OSS (`literature-graph` on PyPI) の残タスクと既知の制約。v0.5 以前の実装履歴は [docs/literature_graph_mcp_implementation_plan.md](docs/literature_graph_mcp_implementation_plan.md) を参照。
@@ -24,18 +24,17 @@ LGC は **構造化エビデンス層**（解釈エンジンではない）。
 
 ---
 
-## Current focus (v0.9)
+## Current focus (v0.13)
 
-**方針:** 機能を先に固め、ドキュメントは v1.0 でまとめて書く。PDF パース強化は Zotero フルパイプライン（v0.11）まで据え置き。
+**方針:** 機能を先に固め、ドキュメントは v1.0 でまとめて書く。
 
 | 優先 | 項目 | 理由 |
 |---|---|---|
-| ✅ | v0.8 Local UX | ウィザード / エラーヒント / Graph UI プレビューカード完了 |
-| 1 | v0.9 API & ingest | cwd 非依存の実行コンテキストと ingest 拡張 |
-| — | v0.10 workspace | 複数コレクション / プロジェクトの分離 |
-| — | v0.11 Zotero + PDF (I04) | 外部ソース連携と PDF 品質が同時に必要になる |
-| — | v0.12 Remote MCP & watch | HTTP MCP + フォルダ監視 (I11, I12) |
-| — | v0.13 Source expansion | Web / CSV / コード等の ingest 拡張 |
+| ✅ | v0.9 API & ingest | `LitgraphContext` + ingest adapters 完了 |
+| ✅ | v0.10 workspace | `workspace_id` スコープ完了 |
+| ✅ | v0.11 Zotero + PDF | フルパイプライン + PDF セクション強化完了 |
+| ✅ | v0.12 Remote MCP & watch | HTTP MCP + `watch_papers_directory` 完了 |
+| 1 | v0.13 Source expansion | Web / CSV / コード等の ingest 拡張 |
 | 最後 | v1.0 docs + PyPI | ワークフロー確定後に一度だけ書く |
 | 以降 | v1.1, v1.2, … | 1.0 以降は semver の minor で機能追加 |
 
@@ -50,17 +49,17 @@ LGC は **構造化エビデンス層**（解釈エンジンではない）。
 | ID | Idea | Target |
 |---|---|---|
 | I01 | Hybrid search entry (embeddings + keyword + graph) | v0.5 ✅ |
-| I02 | New inputs: arXiv / URL / Zotero / CSV connectors | v0.9, v0.11 |
+| I02 | New inputs: arXiv / URL / Zotero / CSV connectors | v0.9, v0.11 ✅ |
 | I03 | Containment: section / subsection + `CONTAINS` edges | TBD |
-| I04 | PDF structure: robust section detection + diagnostics | v0.11 |
+| I04 | PDF structure: robust section detection + diagnostics | v0.11 ✅ |
 | I05 | Citations: merge refs + bib better (`CITES` quality) | TBD |
 | I06 | ID resolution & errors: actionable hints in MCP / CLI | v0.8 ✅ |
 | I07 | Auto-generate `paper_id_map` from `paper_registry` | TBD |
 | I08 | Graph UI: paper-centric sidebar + preview cards | v0.8 ✅ |
-| I09 | Workspace-scoped graph (`workspace_id` on nodes & queries) | v0.10 |
-| I10 | Programmatic API (`LitgraphContext`, injectable store) | v0.9 |
-| I11 | HTTP MCP transport (remote callers) | v0.12 |
-| I12 | Folder watch / auto-ingest (`watch_papers_directory`) | v0.12 |
+| I09 | Workspace-scoped graph (`workspace_id` on nodes & queries) | v0.10 ✅ |
+| I10 | Programmatic API (`LitgraphContext`, injectable store) | v0.9 ✅ |
+| I11 | HTTP MCP transport (remote callers) | v0.12 ✅ |
+| I12 | Folder watch / auto-ingest (`watch_papers_directory`) | v0.12 ✅ |
 | I13 | MCP setup wizard (interactive onboarding) | v0.8 ✅ |
 
 ---
@@ -123,19 +122,19 @@ LGC は **構造化エビデンス層**（解釈エンジンではない）。
 - [x] Graph UI paper sidebar — 詳細パネルを型別プレビューカード化; `contribution_count` (I08)
 - [x] ID / error hints — registry 解決、`did_you_mean` + `hint`、`compare_papers` の `missing_ids`、MCP 起動クラッシュ回避 (I06)
 
-#### v0.9 — Programmatic API & ingest
+#### v0.9 — Programmatic API & ingest ✅
 
-- [ ] Injectable execution context — `GraphStore`、キャッシュパス、設定を cwd 非依存に (I10)
-- [ ] Programmatic ingest API — `ingest_from_path` / `ingest_from_bytes`
-- [ ] Ingest adapters — `source_ref` プラグイン（ローカルフォルダ、バイト、URL / arXiv）(I02)
+- [x] Injectable execution context — `LitgraphContext`、キャッシュパス、設定を cwd 非依存に (I10)
+- [x] Programmatic ingest API — `ingest_from_path` / `ingest_from_bytes`
+- [x] Ingest adapters — `source_ref` プラグイン（ローカルフォルダ、バイト、URL / arXiv）(I02)
 
-#### v0.10 — Workspace-scoped graph
+#### v0.10 — Workspace-scoped graph ✅
 
-- [ ] `workspace_id` on nodes — 全 build / query パスでフィルタ; `(workspace_id, paper_id)` 一意 (I09)
-- [ ] Default workspace — 省略時は `default`（単一 `.litgraph` ワークフローは互換維持）
-- [ ] CLI / MCP context — `--workspace` または `LitgraphContext(workspace_id=...)`
+- [x] `workspace_id` on nodes — 全 build / query パスでフィルタ; `(workspace_id, paper_id)` 一意 (I09)
+- [x] Default workspace — 省略時は `default`（単一 `.litgraph` ワークフローは互換維持）
+- [x] CLI / MCP context — `--workspace` / `LITGRAPH_WORKSPACE` / `LitgraphContext(workspace_id=...)`
 
-#### v0.11 — Zotero full pipeline
+#### v0.11 — Zotero full pipeline ✅
 
 **Shipped**
 
@@ -144,20 +143,20 @@ LGC は **構造化エビデンス層**（解釈エンジンではない）。
 
 **Remaining**
 
-- [ ] Zotero ingest adapter — `source_ref: zotero://{library}/{item_key}` (I02)
-- [ ] `zotero_key` on Paper nodes — `(workspace_id, zotero_key) → paper_id`
-- [ ] PDF attachment fetch — Web API 経由で PDF 取得 → parse → extract → build
-- [ ] Full pipeline sync — bib sync 後に PDF 付き新規 / 変更アイテムを自動 ingest
-- [ ] Collection filter — コレクション単位で workspace に同期
-- [ ] Dedup — `zotero_key` / DOI / `content_hash` で既存論文と照合
-- [ ] PDF section detection — パターン拡張 + 診断出力 (I04); Zotero 経由 PDF の品質に直結
+- [x] Zotero ingest adapter — `source_ref: zotero://{library}/{item_key}` (I02)
+- [x] `zotero_key` on Paper nodes — `(workspace_id, zotero_key) → paper_id`
+- [x] PDF attachment fetch — Web API 経由で PDF 取得 → parse → extract → build
+- [x] Full pipeline sync — `litgraph import zotero-sync --with-pdfs`
+- [x] Collection filter — `--collection`（既存）+ workspace 組合せ
+- [x] Dedup — `zotero_key` / DOI / `content_hash` で既存論文と照合
+- [x] PDF section detection — regex 全一致 + block offset 修正 (I04)
 
 **Deferred (v0.13):** グループライブラリ、デスクトップ sqlite sync（Zotero 拡張の一部として）
 
-#### v0.12 — Remote MCP & watch
+#### v0.12 — Remote MCP & watch ✅
 
-- [ ] HTTP MCP transport (I11)
-- [ ] MCP `watch_papers_directory` — フォルダ変更の自動 ingest (I12)
+- [x] HTTP MCP transport — `litgraph serve-mcp --http` (I11)
+- [x] MCP `watch_papers_directory` — フォルダ監視サブプロセス管理 (I12)
 
 #### v0.13 — Source expansion
 
@@ -206,3 +205,15 @@ litgraph test-mcp
 ```
 
 `parse --all` はキャッシュクリア後にハッシュキャッシュが「変更なし」と報告しても再パースするために必要。
+
+## Migrating to v0.10 (`workspace_id`)
+
+v0.10 以降は `workspace_id` がグラフ・registry・キャッシュに導入された。移行スクリプトは提供しない（v0.6 と同方針）。既存プロジェクトは **再インデックス** する:
+
+```bash
+rm -rf .litgraph/cache .litgraph/db .litgraph/paper_registry.json .litgraph/graph.json
+litgraph scan ./papers && litgraph parse --all && litgraph extract -y && litgraph build
+litgraph test-mcp
+```
+
+`default` workspace ではレガシー `.litgraph/cache/` パスを自動フォールバックするが、新規 ingest は `cache/default/` に書き込まれる。

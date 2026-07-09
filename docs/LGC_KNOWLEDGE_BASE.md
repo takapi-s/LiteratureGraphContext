@@ -191,3 +191,19 @@ Suggested design (high level):
   - Idea index I11/I12 → v0.12
 - Verification:
   - No post-1.0 v1.1/v1.2 sections for HTTP MCP or source expansion; those are v0.12/v0.13 under Pre-1.0.
+
+---
+
+## 2026-07-09 - v0.9–v0.12 implementation shipped
+
+- What we learned / decided:
+  - **v0.9:** Public `LitgraphContext` API (`ingest_from_path`, `ingest_from_bytes`, `ingest_from_source_ref`, query wrappers) + `source_ref` adapters (file, bytes, URL, arXiv, Zotero).
+  - **v0.10:** `workspace_id` on all Kuzu nodes/queries; cache at `.litgraph/cache/{workspace}/`; CLI `--workspace` and `LITGRAPH_WORKSPACE`; legacy `cache/` fallback for `default`.
+  - **v0.11:** `litgraph import zotero-sync --with-pdfs`, PDF fetch via Zotero Web API, dedup (`zotero_key` → DOI → `content_hash`), PDF section regex `finditer` + block offset fix.
+  - **v0.12:** `litgraph serve-mcp --http`, MCP tool `watch_papers_directory` (subprocess `litgraph watch`).
+- Where it's implemented:
+  - `src/litgraph/context.py`, `src/litgraph/ingest/`, `src/litgraph/utils/workspace.py`, `src/litgraph/graph/kuzu_store.py`, `src/litgraph/integrations/zotero.py`, `src/litgraph/mcp/server.py`, `src/litgraph/mcp/watch_manager.py`
+- Verification:
+  - `python3 -m pytest tests/ --ignore=tests/test_watch.py` (or full suite ~7min)
+  - `litgraph serve-mcp --http --port 8000`
+  - `from litgraph import LitgraphContext`
