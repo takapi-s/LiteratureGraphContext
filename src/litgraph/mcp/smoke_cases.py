@@ -21,6 +21,7 @@ def fixture_smoke_cases() -> List[Dict[str, Any]]:
         {"tool": "find_limitations", "args": {"paper_id": bysgnn}, "expect_keys": ["limitations", "paper_id"], "no_error": True},
         {"tool": "explore_paper_graph", "args": {"paper_id": bysgnn, "hops": 1}, "expect_keys": ["nodes", "paper_id", "hops"], "no_error": True},
         {"tool": "explore_paper_graph", "args": {"paper_id": bysgnn, "hops": 2}, "expect_keys": ["nodes", "paper_id", "hops"], "no_error": True},
+        {"tool": "watch_papers_directory", "args": {"action": "status"}, "expect_keys": ["running"], "no_error": True},
     ]
 
 

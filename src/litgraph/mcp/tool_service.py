@@ -10,6 +10,7 @@ from litgraph.cli.config_manager import (
     ResolvedContext,
     get_config_value,
     resolve_context,
+    workspace_from_env,
 )
 from litgraph.graph.graph_builder import _neo4j_config
 from litgraph.mcp import tool_definitions
@@ -45,12 +46,12 @@ _DEPRECATION_MESSAGES: Dict[str, str] = {
 class MCPToolService:
     """Shared tool execution logic for MCP transports."""
 
-    def __init__(self, cwd: Optional[Path] = None) -> None:
+    def __init__(self, cwd: Optional[Path] = None, workspace_id: Optional[str] = None) -> None:
         self.ctx: Optional[ResolvedContext] = None
         self.finder: Optional[PaperFinder] = None
         self._init_error: Optional[str] = None
         try:
-            self.ctx = resolve_context(cwd)
+            self.ctx = resolve_context(cwd, workspace_id=workspace_id or workspace_from_env())
         except ProjectNotFoundError as exc:
             # Keep the MCP server alive so tool calls return an actionable
             # error instead of the transport crashing at startup.
@@ -63,6 +64,7 @@ class MCPToolService:
             neo4j_config=_neo4j_config(self.ctx),
             read_only=True,
             project_config=self.ctx.config,
+            workspace_id=self.ctx.workspace_id,
         )
 
     @property
@@ -70,7 +72,7 @@ class MCPToolService:
         return list(tool_definitions.TOOLS.values())
 
     def handle_tool_call(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        if self.finder is None:
+        if self.finder is None and name != "watch_papers_directory":
             return {
                 "error": self._init_error or "No LiteratureGraph project found.",
                 "hint": (
@@ -131,6 +133,29 @@ class MCPToolService:
                     include_summary=bool(args.get("include_summary", False)),
                 )
             )
+        if name == "watch_papers_directory":
+            from litgraph.mcp.watch_manager import watch_manager
+
+            action = str(args.get("action", "status")).lower()
+            project_root = self.ctx.project_root if self.ctx is not None else None
+            if action == "status":
+                return watch_manager.status(project_root)
+            if action == "stop":
+                return watch_manager.stop(project_root)
+            if action == "start":
+                if self.ctx is None:
+                    return {
+                        "error": self._init_error or "No LiteratureGraph project found.",
+                        "hint": (
+                            "Run `litgraph init --papers-dir ./papers` in your repository, "
+                            "or set LITGRAPH_PROJECT_ROOT to an initialized project root, "
+                            "then restart the MCP server."
+                        ),
+                    }
+                papers_dir = args.get("papers_dir")
+                path = Path(papers_dir) if papers_dir else None
+                return watch_manager.start(self.ctx.project_root, papers_dir=path)
+            return {"error": f"Unknown watch action: {action}"}
         return {"error": f"Unknown tool: {name}"}
 
     def format_tool_result(self, name: str, result: Dict[str, Any]) -> str:

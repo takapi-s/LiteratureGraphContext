@@ -83,4 +83,19 @@ TOOLS = {
             "required": ["paper_id"],
         },
     },
+    "watch_papers_directory": {
+        "name": "watch_papers_directory",
+        "description": (
+            "Start, stop, or check status of folder watch auto-ingest. "
+            "Runs litgraph watch in a background subprocess."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["start", "stop", "status"]},
+                "papers_dir": {"type": "string"},
+            },
+            "required": ["action"],
+        },
+    },
 }

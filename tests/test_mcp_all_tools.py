@@ -27,4 +27,4 @@ def test_mcp_tools_list_matches_definitions(project_tmp, monkeypatch):
     resp = server.handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
     names = {t["name"] for t in resp["result"]["tools"]}
     assert names == set(TOOLS.keys())
-    assert len(names) == 6
+    assert len(names) == 7
