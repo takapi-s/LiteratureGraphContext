@@ -80,6 +80,32 @@ def test_block_heading_detection():
     assert any(name == "RelatedWork" for name, _ in starts)
 
 
+def test_block_heading_small_font_line_does_not_consume_heading_position():
+    """TOC-sized duplicate line must not advance search past the real heading."""
+    full_text = "Introduction\nBody text."
+    pages = [{
+        "page": 1,
+        "text": full_text,
+        "dict": {
+            "blocks": [{
+                "type": 0,
+                "lines": [
+                    {
+                        "spans": [{"text": "Introduction", "size": 9.0, "bbox": [0, 0, 0, 0]}],
+                        "bbox": [0, 0, 0, 0],
+                    },
+                    {
+                        "spans": [{"text": "Introduction", "size": 14.0, "bbox": [0, 0, 0, 0]}],
+                        "bbox": [0, 0, 0, 0],
+                    },
+                ],
+            }],
+        },
+    }]
+    starts, _ = find_block_section_starts(full_text, pages)
+    assert any(name == "Introduction" for name, _ in starts)
+
+
 def test_parse_references_section():
     text = (
         "References\n"

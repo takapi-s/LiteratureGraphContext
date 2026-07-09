@@ -82,28 +82,32 @@ def find_block_section_starts(
 
     hits: List[Tuple[str, int]] = []
     block_names: List[str] = []
+    used_positions: set[int] = set()
 
-    # Map line text to offset in full_text by searching sequentially
+    # Iterate in extraction order: full_text is built from the same TextPage
+    # block order, so this keeps positions monotonically aligned with full_text
+    # (sorting by y0 would interleave columns in multi-column layouts).
     search_from = 0
     for line in lines:
         text = line["text"]
+        pos = full_text.find(text, search_from)
+        while pos >= 0 and pos in used_positions:
+            pos = full_text.find(text, pos + 1)
+        if pos < 0:
+            continue
         if line["size"] < threshold or len(text) > 80:
-            search_from = full_text.find(text, search_from)
-            if search_from >= 0:
-                search_from += len(text)
             continue
         name = _canonical_section_name(text)
+        # Advance past heading-sized lines even when they are not section titles,
+        # so later searches never match earlier occurrences of the same text
+        # (e.g. a mention in body text). Do not advance for sub-threshold lines
+        # (e.g. TOC entries) that share text with the real heading.
+        search_from = pos + len(text)
         if not name:
-            search_from = full_text.find(text, search_from)
-            if search_from >= 0:
-                search_from += len(text)
-            continue
-        pos = full_text.find(text, search_from)
-        if pos < 0:
             continue
         hits.append((name, pos))
         block_names.append(name)
-        search_from = pos + len(text)
+        used_positions.add(pos)
 
     # Deduplicate by section name (first occurrence)
     deduped: List[Tuple[str, int]] = []

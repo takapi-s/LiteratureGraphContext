@@ -39,10 +39,10 @@ def _find_regex_section_starts(text: str) -> Tuple[List[Tuple[str, int]], List[s
     hits: List[Tuple[str, int]] = []
     regex_names: List[str] = []
     for name, pattern in SECTION_PATTERNS:
-        match = pattern.search(text)
-        if match:
+        for match in pattern.finditer(text):
             hits.append((name, match.start()))
-            regex_names.append(name)
+            if name not in regex_names:
+                regex_names.append(name)
     hits.sort(key=lambda x: x[1])
     deduped: List[Tuple[str, int]] = []
     seen = set()
