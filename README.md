@@ -83,7 +83,21 @@ Verify MCP tools: `litgraph test-mcp`
 
 ## Configuration
 
-Project config lives in `.litgraph/config.yaml`. API keys go in `.env` or `~/.litgraph/.env`.
+Each repository has its own project at `<repo>/.litgraph/` (config, cache, graph DB). Run `litgraph init` once per repository before other commands.
+
+| Location | Purpose |
+|---|---|
+| `<repo>/.litgraph/config.yaml` | Project settings (`papers_dir`, LLM, database) |
+| `<repo>/.litgraph/cache/`, `db/` | Per-project scan cache and graph |
+| `~/.litgraph/.env` | Global API keys (shared across projects) |
+| `~/.litgraph/logs/` | Global log files |
+
+**Important:** `~/.litgraph` is for API keys and logs only—it is **not** a project. Commands like `scan`, `parse`, and `build` require an initialized project under your repository. If you see unexpected paths or split graph data, run `litgraph doctor`.
+
+Project resolution order:
+
+1. `LITGRAPH_PROJECT_ROOT` (MCP / IDE)
+2. Walk up from cwd to find `<repo>/.litgraph/config.yaml` (skips `~/.litgraph`)
 
 ## MCP setup (Cursor)
 

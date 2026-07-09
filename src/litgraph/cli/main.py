@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 from typing import List, Optional
@@ -12,6 +13,7 @@ from rich.console import Console
 
 from litgraph import __version__
 from litgraph.cli import config_manager, helpers
+from litgraph.cli.config_manager import ProjectNotFoundError, ResolvedContext
 from litgraph.mcp.setup_wizard import configure_mcp_client
 
 app = typer.Typer(name="litgraph", help="LiteratureGraphContext: papers to knowledge graph.")
@@ -22,6 +24,22 @@ app.add_typer(config_app, name="config")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(query_app, name="query")
 console = Console(stderr=True)
+
+
+def _ctx(*, quiet: bool = False) -> ResolvedContext:
+    """Resolve project context or exit with an actionable error message."""
+    try:
+        ctx = config_manager.resolve_context()
+    except ProjectNotFoundError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    if not quiet:
+        papers = ctx.config.get("papers_dir", "papers")
+        console.print(
+            f"[dim][litgraph] project: {ctx.project_root} "
+            f"(papers_dir: {papers})[/dim]"
+        )
+    return ctx
 
 
 @app.callback()
@@ -41,12 +59,98 @@ def init_cmd(
     console.print(f"[green]Initialized[/green] {litgraph_dir}")
 
 
+_LEGACY_PROJECT_ARTIFACTS = (
+    "config.yaml",
+    "graph.json",
+    "paper_registry.json",
+)
+
+
+def _count_pdfs(directory: Path) -> int:
+    if not directory.is_dir():
+        return 0
+    return sum(1 for _ in directory.glob("*.pdf"))
+
+
+def _legacy_home_project_artifacts() -> list[str]:
+    global_dir = config_manager.GLOBAL_CONFIG_DIR
+    found: list[str] = []
+    for name in _LEGACY_PROJECT_ARTIFACTS:
+        if (global_dir / name).exists():
+            found.append(name)
+    for subdir in ("cache", "db"):
+        path = global_dir / subdir
+        if path.is_dir() and any(path.iterdir()):
+            found.append(f"{subdir}/")
+    return found
+
+
+@app.command("doctor")
+def doctor_cmd() -> None:
+    """Diagnose project resolution and legacy ~/.litgraph project artifacts."""
+    env_root = os.getenv("LITGRAPH_PROJECT_ROOT", "").strip()
+    if env_root:
+        console.print(f"[cyan]LITGRAPH_PROJECT_ROOT[/cyan]: {env_root}")
+    else:
+        console.print("[cyan]LITGRAPH_PROJECT_ROOT[/cyan]: (not set)")
+
+    console.print(
+        f"[cyan]Global config[/cyan]: {config_manager.GLOBAL_CONFIG_DIR} "
+        "(API keys and logs only; not a project)"
+    )
+
+    try:
+        ctx = config_manager.resolve_context()
+    except ProjectNotFoundError as exc:
+        console.print(f"\n[yellow]No active project:[/yellow] {exc}")
+        ctx = None
+    else:
+        pdf_count = _count_pdfs(ctx.papers_dir)
+        graph_path = ctx.litgraph_dir / "graph.json"
+        db_dir = ctx.litgraph_dir / "db"
+        has_graph = graph_path.exists() or (
+            db_dir.is_dir() and any(db_dir.iterdir())
+        )
+        console.print("\n[green]Active project[/green]")
+        console.print(f"  root:       {ctx.project_root}")
+        console.print(f"  litgraph:   {ctx.litgraph_dir}")
+        console.print(f"  papers_dir: {ctx.papers_dir} ({pdf_count} PDF(s))")
+        console.print(f"  graph:      {'ready' if has_graph else 'not built'}")
+
+    legacy = _legacy_home_project_artifacts()
+    if legacy:
+        console.print(
+            "\n[yellow]Legacy project artifacts in ~/.litgraph[/yellow] "
+            "(should not be used as a project):"
+        )
+        for item in legacy:
+            console.print(f"  - {item}")
+        console.print(
+            "\n[dim]Recommended: initialize a repo-local project and rebuild there:[/dim]"
+        )
+        console.print("  cd /path/to/your/repo")
+        console.print("  litgraph init --papers-dir ./papers")
+        console.print("  litgraph scan ./papers && litgraph parse && litgraph extract -y && litgraph build")
+        console.print(
+            "\n[dim]If you had graph data only under ~/.litgraph, copy artifacts manually "
+            "after verifying papers_dir paths, then remove legacy project files "
+            "from ~/.litgraph (keep .env and logs/).[/dim]"
+        )
+    else:
+        console.print("\n[green]No legacy project artifacts in ~/.litgraph[/green]")
+
+    if ctx is None and not legacy:
+        console.print(
+            "\n[dim]Run litgraph init --papers-dir ./papers in your repository to get started.[/dim]"
+        )
+
+
 @app.command("scan")
 def scan_cmd(
     papers_path: Optional[Path] = typer.Argument(None, help="Papers directory (optional)"),
 ) -> None:
     """Scan papers folder and update file hash cache."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.scan_papers(ctx, papers_path, persist_dir=papers_path is not None)
     console.print(
         f"Scanned {result['total']} files ({result['changed']} changed) in {result['papers_dir']}."
@@ -59,7 +163,7 @@ def config_set(
     value: str = typer.Argument(..., help="Config value"),
 ) -> None:
     """Set a project config value."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     if key == "papers_dir":
         stored = config_manager.save_papers_dir(ctx, Path(value))
         console.print(f"[green]papers_dir[/green] = {stored}")
@@ -74,7 +178,7 @@ def parse_cmd(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show per-paper section and reference details"),
 ) -> None:
     """Parse PDFs, Markdown notes, and BibTeX metadata into cache."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.parse_papers(ctx, only_changed=not all_files, verbose=verbose)
     console.print(
         f"Parsed {result['parsed']} paper(s), {result.get('bib_files', 0)} bib file(s)."
@@ -90,7 +194,7 @@ def extract_cmd(
     background: bool = typer.Option(False, "--background", help="Run extraction in background job"),
 ) -> None:
     """Extract structured data from parsed papers using LLM."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     if background:
         job_id = helpers.extract_papers_async(
             ctx, skip_confirm=yes, provider=provider, model=model, force=force,
@@ -129,7 +233,7 @@ def build_cmd(
     enrich_s2: bool = typer.Option(False, "--enrich-s2", help="Enrich metadata via Semantic Scholar"),
 ) -> None:
     """Build graph from extracted JSON and bib metadata."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.build_paper_graph(ctx, enrich_s2=enrich_s2)
     console.print(
         f"Indexed {result.get('papers_indexed', 0)} paper(s), "
@@ -154,7 +258,7 @@ def rebuild_cmd(
     - For Kuzu backend, this removes the local DB directory under .litgraph/db.
     - For Neo4j backend, the DB is remote; this command will NOT delete the remote DB.
     """
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     backend = str(ctx.config.get("database") or "kuzu")
     do_extract = with_extract or force_extract
 
@@ -256,7 +360,7 @@ def watch_cmd(
     enrich_s2: bool = typer.Option(False, "--enrich-s2", help="Enrich metadata via Semantic Scholar on rebuild"),
 ) -> None:
     """Watch papers directory; queues changes while a batch is processing."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
 
     def _on_result(result: dict) -> None:
         parsed = result.get("parsed", 0)
@@ -315,7 +419,7 @@ def viz_cmd(
     no_browser: bool = typer.Option(False, "--no-browser"),
 ) -> None:
     """Launch local Web UI for graph visualization."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     console.print(f"[green]Starting graph viewer on http://127.0.0.1:{port}[/green]")
     helpers.launch_visualizer(ctx, port=port, open_browser=not no_browser)
 
@@ -348,7 +452,7 @@ def import_zotero(
     """Import a Zotero JSON export into bib cache."""
     from litgraph.integrations.zotero import import_zotero_export
 
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     entries = import_zotero_export(export_path.resolve(), ctx.bib_cache_dir)
     console.print(f"Imported {len(entries)} entries from Zotero export.")
 
@@ -362,7 +466,7 @@ def import_zotero_sync(
     """Sync Zotero library via Web API (requires ZOTERO_USER_ID and ZOTERO_API_KEY)."""
     from litgraph.integrations.zotero import sync_zotero_library
 
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = sync_zotero_library(
         ctx.bib_cache_dir,
         collection_key=collection,
@@ -382,7 +486,7 @@ def query_papers(
     task: Optional[str] = typer.Option(None, "--task"),
 ) -> None:
     """Query papers by method or task."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.run_query(ctx, "papers", method=method, task=task)
     helpers.print_query_result(result)
 
@@ -392,7 +496,7 @@ def query_limitations(
     topic: str = typer.Option(..., "--topic"),
 ) -> None:
     """Find limitations related to a topic."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.run_query(ctx, "limitations", topic=topic)
     helpers.print_query_result(result)
 
@@ -402,7 +506,7 @@ def query_compare(
     paper_ids: List[str] = typer.Argument(..., help="Paper IDs to compare"),
 ) -> None:
     """Compare papers side by side."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.run_query(ctx, "compare", paper_ids=paper_ids)
     helpers.print_query_result(result)
 
@@ -412,7 +516,7 @@ def query_matrix(
     topic: str = typer.Option(..., "--topic"),
 ) -> None:
     """Build a literature matrix for a topic."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.run_query(ctx, "matrix", topic=topic)
     helpers.print_query_result(result)
 
@@ -422,7 +526,7 @@ def query_paper(
     paper_id: str = typer.Argument(..., help="Paper ID"),
 ) -> None:
     """Summarize a paper."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.run_query(ctx, "paper", paper_id=paper_id)
     helpers.print_query_result(result)
 
@@ -432,7 +536,7 @@ def query_claim(
     claim_id: str = typer.Argument(..., help="Claim ID"),
 ) -> None:
     """Get evidence for a claim."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.run_query(ctx, "claim", claim_id=claim_id)
     helpers.print_query_result(result)
 
@@ -443,7 +547,7 @@ def query_neighbors(
     include_summary: bool = typer.Option(False, "--include-summary"),
 ) -> None:
     """List graph neighbors (CITES, CONTRASTS_WITH, EXTENDS) for a paper."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.run_query(ctx, "neighbors", paper_id=paper_id, include_summary=include_summary)
     helpers.print_query_result(result)
 
@@ -454,7 +558,7 @@ def query_search(
     top_k: int = typer.Option(10, "--top-k"),
 ) -> None:
     """Search papers by natural-language query."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.run_query(ctx, "search", topic=query)
     helpers.print_query_result(result)
 
@@ -465,7 +569,7 @@ def query_expand(
     hops: int = typer.Option(2, "--hops"),
 ) -> None:
     """Expand the literature graph from a seed paper."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     finder = helpers._finder(ctx)
     result = finder.expand_paper_graph(paper_id, hops=hops)
     helpers.print_query_result(result)
@@ -476,7 +580,7 @@ def query_outline(
     topic: str = typer.Option(..., "--topic"),
 ) -> None:
     """Generate related work section outline."""
-    ctx = config_manager.resolve_context()
+    ctx = _ctx()
     result = helpers.run_query(ctx, "outline", topic=topic)
     helpers.print_query_result(result)
 

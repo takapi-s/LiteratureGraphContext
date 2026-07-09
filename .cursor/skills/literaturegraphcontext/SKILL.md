@@ -37,8 +37,8 @@ search_papers("ambiguous topic")   # always first for discovery
 ## Core workflow
 
 1. **Install**: `pip install -e ".[dev]"` (from repo) or `pip install literature-graph` when published.
-2. **Configure**: `litgraph init --papers-dir ./my-papers`. API keys in `.env` or `~/.litgraph/.env` (`LLM_PROVIDER`, `OPENAI_API_KEY`, etc.).
-3. **Index pipeline** (run from project root):
+2. **Configure**: `litgraph init --papers-dir ./my-papers` (required once per repo). API keys in `.env` or `~/.litgraph/.env` (`LLM_PROVIDER`, `OPENAI_API_KEY`, etc.). Run `litgraph doctor` if project resolution looks wrong.
+3. **Index pipeline** (run from an initialized project directory):
    ```bash
    litgraph scan          # hash cache
    litgraph parse         # PDF / .md / .bib → cache
@@ -54,8 +54,10 @@ Supported inputs under `papers_dir`: `.pdf` (full pipeline), `.md` (notes), `.bi
 ## MCP setup (short)
 
 - Run `litgraph mcp setup` to write `mcp.json` for Cursor / Claude Desktop.
-- Server entry runs `litgraph serve-mcp` from the project root so it resolves `.litgraph/`.
-- CLI and MCP must share the same project root and graph DB.
+- Server entry runs `litgraph serve-mcp` with `LITGRAPH_PROJECT_ROOT` pointing at the repo.
+- CLI and MCP must share the same initialized project (same `.litgraph/`).
+- `~/.litgraph` is global config only—not a project. Do not run `litgraph scan` from `$HOME`.
+- Run `litgraph doctor` to diagnose project resolution or legacy data under `~/.litgraph`.
 - After upgrading LGC, restart the MCP server so Cursor picks up tool list changes.
 
 ## MCP tools (v0.7 — 6 tools)

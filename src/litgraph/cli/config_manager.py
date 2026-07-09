@@ -14,6 +14,35 @@ GLOBAL_CONFIG_DIR = Path.home() / ".litgraph"
 GLOBAL_ENV_FILE = GLOBAL_CONFIG_DIR / ".env"
 PROJECT_DIR_NAME = ".litgraph"
 
+class ProjectNotFoundError(FileNotFoundError):
+    """Raised when no initialized ``.litgraph`` project can be resolved."""
+
+    def __init__(
+        self,
+        searched_from: Path,
+        *,
+        env_root: Optional[str] = None,
+    ) -> None:
+        self.searched_from = searched_from.resolve()
+        self.env_root = env_root
+        if env_root:
+            message = (
+                f"LITGRAPH_PROJECT_ROOT is set to {env_root!r} but no "
+                f".litgraph/config.yaml exists there.\n\n"
+                "Initialize the project:\n"
+                f"  cd {env_root}\n"
+                "  litgraph init --papers-dir ./papers"
+            )
+        else:
+            message = (
+                f"No LiteratureGraph project found (searched from {self.searched_from}).\n\n"
+                "Initialize a project in your repository:\n"
+                f"  cd {self.searched_from}\n"
+                "  litgraph init --papers-dir ./papers"
+            )
+        super().__init__(message)
+
+
 DEFAULT_PROJECT_CONFIG: Dict[str, Any] = {
     "papers_dir": "examples/papers",
     "database": "kuzu",
@@ -82,28 +111,54 @@ def load_env() -> None:
     ensure_global_config_dir()
     if GLOBAL_ENV_FILE.exists():
         load_dotenv(GLOBAL_ENV_FILE)
-    local_env = find_project_litgraph_dir() / ".env"
-    if local_env.exists():
-        load_dotenv(local_env, override=True)
+    litgraph_dir = find_project_litgraph_dir()
+    if litgraph_dir is not None:
+        local_env = litgraph_dir / ".env"
+        if local_env.exists():
+            load_dotenv(local_env, override=True)
     load_dotenv(override=True)
 
 
-def _walk_up_litgraph_dir(start: Path) -> Path:
-    """Return ``.litgraph`` directory by walking up from ``start`` (no env load)."""
+def _is_valid_project_dir(litgraph_dir: Path) -> bool:
+    """True when ``litgraph_dir`` is an initialized project (has config.yaml)."""
+    return (litgraph_dir / "config.yaml").is_file()
+
+
+def _walk_up_litgraph_dir(start: Path) -> Optional[Path]:
+    """Return initialized ``.litgraph`` directory by walking up from ``start``.
+
+    Skips ``~/.litgraph`` (global config only, not a project).
+    """
+    global_dir = GLOBAL_CONFIG_DIR.resolve()
     current = start.resolve()
     for _ in range(10):
-        candidate = current / PROJECT_DIR_NAME
-        if candidate.is_dir():
+        candidate = (current / PROJECT_DIR_NAME).resolve()
+        if (
+            candidate != global_dir
+            and candidate.is_dir()
+            and _is_valid_project_dir(candidate)
+        ):
             return candidate
         if current.parent == current:
             break
         current = current.parent
-    return start.resolve() / PROJECT_DIR_NAME
+    return None
 
 
-def find_project_litgraph_dir(cwd: Optional[Path] = None) -> Path:
+def find_project_litgraph_dir(cwd: Optional[Path] = None) -> Optional[Path]:
     start = cwd if cwd is not None else Path.cwd()
     return _walk_up_litgraph_dir(start)
+
+
+def _validate_project_root(
+    project_root: Path,
+    *,
+    env_root: Optional[str] = None,
+) -> Path:
+    litgraph_dir = project_root / PROJECT_DIR_NAME
+    if not _is_valid_project_dir(litgraph_dir):
+        raise ProjectNotFoundError(project_root, env_root=env_root)
+    return project_root.resolve()
 
 
 def resolve_project_root(cwd: Optional[Path] = None) -> Path:
@@ -112,29 +167,32 @@ def resolve_project_root(cwd: Optional[Path] = None) -> Path:
     Priority:
     1. Explicit ``cwd`` argument (tests, programmatic callers)
     2. ``LITGRAPH_PROJECT_ROOT`` environment variable (MCP / IDE config)
-    3. Walk up from the process cwd to find an existing ``.litgraph`` directory
-    4. Current working directory
+    3. Walk up from the process cwd to find ``.litgraph/config.yaml``
+
+    Raises:
+        ProjectNotFoundError: No initialized project was found.
     """
     load_env()
     if cwd is not None:
-        return cwd.resolve()
+        return _validate_project_root(cwd.resolve())
 
     env_root = os.getenv("LITGRAPH_PROJECT_ROOT", "").strip()
     if env_root:
-        return Path(env_root).expanduser().resolve()
+        return _validate_project_root(
+            Path(env_root).expanduser().resolve(),
+            env_root=env_root,
+        )
 
     litgraph_dir = find_project_litgraph_dir()
-    if litgraph_dir.is_dir():
-        return litgraph_dir.parent
-    return Path.cwd().resolve()
+    if litgraph_dir is not None:
+        return litgraph_dir.parent.resolve()
+
+    raise ProjectNotFoundError(Path.cwd())
 
 
-def resolve_context(cwd: Optional[Path] = None, init: bool = False) -> ResolvedContext:
+def resolve_context(cwd: Optional[Path] = None) -> ResolvedContext:
     project_root = resolve_project_root(cwd)
     litgraph_dir = project_root / PROJECT_DIR_NAME
-
-    if init or not litgraph_dir.exists():
-        init_project(project_root)
 
     config = load_project_config(litgraph_dir)
     cache_dir = litgraph_dir / "cache"

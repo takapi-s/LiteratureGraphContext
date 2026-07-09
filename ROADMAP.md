@@ -82,6 +82,7 @@ LGC は **構造化エビデンス層**（解釈エンジンではない）。
 
 ### v0.8 — Local UX & graph quality
 
+- [x] Project resolution fix — `~/.litgraph` excluded from walk-up; `litgraph init` required; `litgraph doctor` (I06)
 - [ ] Documentation and tutorial — init → extract → MCP → viz
 - [ ] PDF section detection — Related Work, Background, References パターン (I04)
 - [ ] Graph UI paper sidebar — プレビューカード (I08)
