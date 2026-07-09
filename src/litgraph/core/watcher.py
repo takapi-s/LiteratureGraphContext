@@ -19,6 +19,7 @@ from litgraph.scanner.ignore import build_ignore_spec, should_ignore
 
 POLLING_ENV_VAR = "LITGRAPH_WATCH_POLLING"
 TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
+DEBOUNCE_SEC = 0.5
 
 
 def should_use_polling_observer(use_polling: Optional[bool] = None) -> bool:
@@ -112,6 +113,18 @@ class PapersEventHandler(FileSystemEventHandler):
 
             if not changed and not deleted:
                 continue
+
+            while True:
+                time.sleep(DEBOUNCE_SEC)
+                with self._wake:
+                    if self._shutdown:
+                        return
+                    if not self._pending_changed and not self._pending_deleted:
+                        break
+                    changed = sorted(set(changed) | self._pending_changed)
+                    deleted = sorted(set(deleted) | self._pending_deleted)
+                    self._pending_changed.clear()
+                    self._pending_deleted.clear()
 
             try:
                 result = process_watch_changes(

@@ -51,6 +51,36 @@ def test_find_removed_files(project_tmp):
     assert "papers/gone.md" not in load_cache(ctx.files_cache_path)
 
 
+def test_process_watch_skips_unchanged_file(project_tmp, monkeypatch):
+    ctx = resolve_context(project_tmp)
+    papers = _use_papers_dir(ctx, project_tmp)
+    md = papers / "stable.md"
+    shutil.copy(FIXTURES_DIR / "sample_note.md", md)
+
+    monkeypatch.setattr(
+        "litgraph.cli.helpers.wait_for_file_ready",
+        lambda path, **kwargs: path.exists() and path.stat().st_size > 0,
+    )
+
+    first = process_watch_changes(
+        ctx,
+        changed_paths=[md.resolve()],
+        deleted_paths=[],
+        auto_extract=False,
+        auto_build=False,
+    )
+    assert first["parsed"] == 1
+
+    second = process_watch_changes(
+        ctx,
+        changed_paths=[md.resolve()],
+        deleted_paths=[],
+        auto_extract=False,
+        auto_build=False,
+    )
+    assert second["parsed"] == 0
+
+
 def test_process_watch_skips_empty_pdf(project_tmp, monkeypatch):
     ctx = resolve_context(project_tmp)
     papers = _use_papers_dir(ctx, project_tmp)

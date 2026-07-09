@@ -204,7 +204,44 @@ def _needs_extraction(ctx: ResolvedContext, paper_id: str, *, force: bool = Fals
         return True
     if not parsed_path.exists():
         return False
+
+    try:
+        parsed = json.loads(parsed_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return parsed_path.stat().st_mtime > extracted_path.stat().st_mtime
+
+    content_hash = str(parsed.get("content_hash") or "")
+    source_path = str(parsed.get("source_path") or "")
+    if content_hash and source_path:
+        cached_sha = (load_cache(ctx.files_cache_path).get(source_path) or {}).get("sha256", "")
+        if cached_sha and content_hash == cached_sha:
+            return False
+
     return parsed_path.stat().st_mtime > extracted_path.stat().st_mtime
+
+
+def _should_skip_unchanged_parse(
+    ctx: ResolvedContext,
+    file_path: Path,
+    *,
+    file_cache: Dict[str, Any],
+) -> bool:
+    rel = _rel_path(ctx, file_path)
+    try:
+        sha = file_sha256(file_path)
+    except OSError:
+        return False
+    cached_sha = (file_cache.get(rel) or {}).get("sha256", "")
+    if not cached_sha or sha != cached_sha:
+        return False
+    paper_id = get_paper_id_for_path(
+        ctx.litgraph_dir,
+        rel,
+        workspace_id=ctx.workspace_id,
+    )
+    if not paper_id:
+        return False
+    return (ctx.parsed_cache_dir / f"{paper_id}.json").exists()
 
 
 def _confirm_external_api(ctx: ResolvedContext, provider_name: str, section_count: int, skip: bool) -> bool:
@@ -515,6 +552,8 @@ def process_watch_changes(
     file_cache = load_cache(ctx.files_cache_path)
     for path in changed_paths:
         if not path.exists():
+            continue
+        if _should_skip_unchanged_parse(ctx, path, file_cache=file_cache):
             continue
         kind, paper_id, skip_reason = _try_parse_file(
             ctx,
