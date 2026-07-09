@@ -113,17 +113,27 @@ class PapersEventHandler(FileSystemEventHandler):
             if not changed and not deleted:
                 continue
 
-            result = process_watch_changes(
-                self.ctx,
-                changed_paths=changed,
-                deleted_paths=deleted,
-                auto_extract=self.options.auto_extract,
-                auto_build=self.options.auto_build,
-                skip_confirm=self.options.skip_confirm,
-                provider=self.options.provider,
-                model=self.options.model,
-                enrich_s2=self.options.enrich_s2,
-            )
+            try:
+                result = process_watch_changes(
+                    self.ctx,
+                    changed_paths=changed,
+                    deleted_paths=deleted,
+                    auto_extract=self.options.auto_extract,
+                    auto_build=self.options.auto_build,
+                    skip_confirm=self.options.skip_confirm,
+                    provider=self.options.provider,
+                    model=self.options.model,
+                    enrich_s2=self.options.enrich_s2,
+                )
+            except Exception:
+                from litgraph.utils.logging import get_logger
+
+                get_logger(__name__).exception(
+                    "Failed to process watch changes for %d changed, %d deleted file(s)",
+                    len(changed),
+                    len(deleted),
+                )
+                continue
             if self.options.on_result:
                 self.options.on_result(result)
 

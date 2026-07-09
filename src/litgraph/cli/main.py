@@ -404,6 +404,11 @@ def watch_cmd(
                 f"[yellow]{len(pending)} paper(s) parsed but not in graph "
                 f"(run litgraph extract): {', '.join(pending)}[/yellow]"
             )
+        for skipped in result.get("parse_skipped", []):
+            console.print(
+                f"[yellow]Skipped {skipped.get('path', 'file')}: "
+                f"{skipped.get('reason', 'parse failed')}[/yellow]"
+            )
         if result.get("cancelled"):
             console.print("[yellow]Auto-extract cancelled.[/yellow]")
 

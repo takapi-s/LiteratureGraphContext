@@ -20,18 +20,22 @@ from litgraph.graph.entity_catalog import EntityCatalog
 from litgraph.graph.graph_builder import build_graph, _neo4j_config
 from litgraph.graph.db_factory import get_graph_store
 from litgraph.parser.dispatcher import collect_parse_targets, parse_file
+from litgraph.parser.pdf_parser import EmptyPdfError
 from litgraph.query.paper_finder import PaperFinder
 from litgraph.parser.bib_linker import link_bib_to_paper
 from litgraph.parser.bib_parser import load_all_bib_entries
 from litgraph.scanner.file_scanner import discover_papers
-from litgraph.scanner.hash_cache import find_removed_files, load_cache, remove_from_cache, scan_and_update
+from litgraph.scanner.hash_cache import find_removed_files, file_sha256, load_cache, remove_from_cache, scan_and_update
 from litgraph.utils.paper_registry import assign_paper_id, get_paper_id_for_path, load_registry, save_registry
 from litgraph.utils.ids import paper_id_from_path
+from litgraph.utils.file_ready import wait_for_file_ready
+from litgraph.utils.logging import get_logger
 from litgraph.utils.paper_identity import load_paper_id_map, resolve_canonical_paper_id
 
 console = Console()
 _job_manager = JobManager()
 EXTRACTION_MAX_RETRIES = 3
+logger = get_logger(__name__)
 
 
 def get_job_manager() -> JobManager:
@@ -65,6 +69,46 @@ def _rel_path(ctx: ResolvedContext, path: Path) -> str:
         return str(path.resolve().relative_to(ctx.project_root))
     except ValueError:
         return str(path.resolve())
+
+
+def _try_parse_file(
+    ctx: ResolvedContext,
+    file_path: Path,
+    *,
+    file_cache: Dict[str, Any],
+    wait_for_ready: bool = False,
+) -> tuple[str, str, Optional[str]]:
+    """Parse one file, returning (kind, paper_id, skip_reason)."""
+    if wait_for_ready and not wait_for_file_ready(file_path):
+        rel = _rel_path(ctx, file_path)
+        if file_path.exists() and file_path.stat().st_size == 0:
+            return "skip", "", f"empty file: {rel}"
+        return "skip", "", f"file not ready: {rel}"
+
+    rel = _rel_path(ctx, file_path)
+    try:
+        sha = file_sha256(file_path)
+    except OSError as exc:
+        logger.warning("Skipping %s: %s", rel, exc)
+        return "skip", "", str(exc)
+    try:
+        kind, paper_id = parse_file(
+            file_path,
+            ctx.bib_cache_dir,
+            ctx.parsed_cache_dir,
+            litgraph_dir=ctx.litgraph_dir,
+            project_root=ctx.project_root,
+            content_hash=sha,
+        )
+    except (EmptyPdfError, OSError) as exc:
+        logger.warning("Skipping %s: %s", rel, exc)
+        return "skip", "", str(exc)
+    except Exception as exc:
+        if exc.__class__.__module__.startswith("fitz"):
+            logger.warning("Skipping %s: %s", rel, exc)
+            return "skip", "", str(exc)
+        raise
+    return kind, paper_id, None
 
 
 def scan_papers(
@@ -102,16 +146,9 @@ def parse_papers(ctx: ResolvedContext, only_changed: bool = True, *, verbose: bo
     bib_files = 0
     parse_details: List[Dict[str, Any]] = []
     for file_path in to_parse:
-        rel = _rel_path(ctx, file_path)
-        sha = (file_cache.get(rel) or {}).get("sha256", "")
-        kind, paper_id = parse_file(
-            file_path,
-            ctx.bib_cache_dir,
-            ctx.parsed_cache_dir,
-            litgraph_dir=ctx.litgraph_dir,
-            project_root=ctx.project_root,
-            content_hash=sha,
-        )
+        kind, paper_id, skip_reason = _try_parse_file(ctx, file_path, file_cache=file_cache)
+        if skip_reason:
+            continue
         if kind in ("pdf", "md") and paper_id:
             parsed_ids.append(paper_id)
             if verbose and kind == "pdf":
@@ -473,21 +510,21 @@ def process_watch_changes(
     delete_info = _handle_deleted_paths(ctx, deleted_paths)
 
     parsed_ids: List[str] = []
+    parse_skipped: List[Dict[str, str]] = []
     bib_changed = delete_info["bib_files_removed"] > 0
     file_cache = load_cache(ctx.files_cache_path)
     for path in changed_paths:
         if not path.exists():
             continue
-        rel = _rel_path(ctx, path)
-        sha = (file_cache.get(rel) or {}).get("sha256", "")
-        kind, paper_id = parse_file(
+        kind, paper_id, skip_reason = _try_parse_file(
+            ctx,
             path,
-            ctx.bib_cache_dir,
-            ctx.parsed_cache_dir,
-            litgraph_dir=ctx.litgraph_dir,
-            project_root=ctx.project_root,
-            content_hash=sha,
+            file_cache=file_cache,
+            wait_for_ready=True,
         )
+        if skip_reason:
+            parse_skipped.append({"path": _rel_path(ctx, path), "reason": skip_reason})
+            continue
         if kind == "bib":
             bib_changed = True
         elif kind in ("pdf", "md") and paper_id:
@@ -528,6 +565,7 @@ def process_watch_changes(
     return {
         "parsed": len(parsed_ids),
         "paper_ids": parsed_ids,
+        "parse_skipped": parse_skipped,
         "extracted": extracted,
         "extract_skipped": extract_skipped,
         "pending_extract": pending_extract,

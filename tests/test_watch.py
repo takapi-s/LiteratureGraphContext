@@ -51,6 +51,32 @@ def test_find_removed_files(project_tmp):
     assert "papers/gone.md" not in load_cache(ctx.files_cache_path)
 
 
+def test_process_watch_skips_empty_pdf(project_tmp, monkeypatch):
+    ctx = resolve_context(project_tmp)
+    papers = _use_papers_dir(ctx, project_tmp)
+    pdf = papers / "empty.pdf"
+    pdf.write_bytes(b"")
+
+    monkeypatch.setattr(
+        "litgraph.cli.helpers.wait_for_file_ready",
+        lambda path, **kwargs: path.exists() and path.stat().st_size > 0,
+    )
+
+    result = process_watch_changes(
+        ctx,
+        changed_paths=[pdf.resolve()],
+        deleted_paths=[],
+        auto_extract=False,
+        auto_build=False,
+    )
+
+    assert result["parsed"] == 0
+    assert result["paper_ids"] == []
+    assert len(result["parse_skipped"]) == 1
+    assert "empty" in result["parse_skipped"][0]["reason"].lower()
+    assert not list(ctx.parsed_cache_dir.glob("*.json"))
+
+
 def test_process_watch_parse_without_extract(project_tmp):
     ctx = resolve_context(project_tmp)
     papers = _use_papers_dir(ctx, project_tmp)
