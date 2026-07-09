@@ -110,6 +110,35 @@ def test_mcp_degrades_when_env_root_uninitialized(isolated_home: Path, monkeypat
     service.close()
 
 
+def test_mcp_watch_status_without_project(isolated_home: Path, monkeypatch):
+    """watch status/stop must work even when project context init failed."""
+    monkeypatch.setattr(config_manager, "GLOBAL_CONFIG_DIR", isolated_home / ".litgraph")
+    uninit = isolated_home / "uninit"
+    uninit.mkdir()
+    monkeypatch.setenv("LITGRAPH_PROJECT_ROOT", str(uninit))
+
+    service = MCPToolService(cwd=uninit)
+    result = service.handle_tool_call("watch_papers_directory", {"action": "status"})
+    assert "running" in result
+    assert "error" not in result
+    service.close()
+
+
+def test_mcp_watch_start_without_project_returns_error(isolated_home: Path, monkeypatch):
+    """watch start must not raise AttributeError when ctx is None."""
+    monkeypatch.setattr(config_manager, "GLOBAL_CONFIG_DIR", isolated_home / ".litgraph")
+    uninit = isolated_home / "uninit"
+    uninit.mkdir()
+    monkeypatch.setenv("LITGRAPH_PROJECT_ROOT", str(uninit))
+
+    service = MCPToolService(cwd=uninit)
+    assert service.ctx is None
+    result = service.handle_tool_call("watch_papers_directory", {"action": "start"})
+    assert "error" in result
+    assert "litgraph init" in result["hint"]
+    service.close()
+
+
 @pytest.fixture
 def isolated_home(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -131,5 +160,5 @@ def test_ctx_helper_calls_resolve_context_not_itself(project_tmp: Path):
     with patch.object(cm, "resolve_context", return_value=fake) as mock_resolve:
         ctx = _ctx(quiet=True)
 
-    mock_resolve.assert_called_once_with()
+    mock_resolve.assert_called_once_with(workspace_id=None)
     assert ctx.project_root == project_tmp.resolve()
