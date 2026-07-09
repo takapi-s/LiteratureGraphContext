@@ -46,12 +46,18 @@ def _finder(ctx: ResolvedContext, *, read_only: bool = True) -> PaperFinder:
         neo4j_config=_neo4j_config(ctx),
         read_only=read_only,
         project_config=ctx.config,
+        workspace_id=ctx.workspace_id,
     )
 
 
 def _graph_store(ctx: ResolvedContext):
     backend = str(get_config_value(ctx, "database", "LITGRAPH_DATABASE"))
-    return get_graph_store(ctx.db_path, backend=backend, neo4j_config=_neo4j_config(ctx))
+    return get_graph_store(
+        ctx.db_path,
+        backend=backend,
+        neo4j_config=_neo4j_config(ctx),
+        workspace_id=ctx.workspace_id,
+    )
 
 
 def _rel_path(ctx: ResolvedContext, path: Path) -> str:
@@ -75,7 +81,7 @@ def scan_papers(
         if file_path.suffix.lower() in (".pdf", ".md"):
             rel = _rel_path(ctx, file_path)
             sha = (cache.get(rel) or {}).get("sha256", "")
-            assign_paper_id(ctx.litgraph_dir, rel, sha)
+            assign_paper_id(ctx.litgraph_dir, rel, sha, workspace_id=ctx.workspace_id)
     return {
         "total": len(files),
         "changed": len(changed),
@@ -214,7 +220,7 @@ def _run_extractions(
         bib_doi = bib_match.get("doi") if bib_match else None
 
         last_error: Optional[Exception] = None
-        entity_catalog = EntityCatalog.load(ctx.litgraph_dir)
+        entity_catalog = EntityCatalog.load(ctx.litgraph_dir, workspace_id=ctx.workspace_id)
         for attempt in range(1, EXTRACTION_MAX_RETRIES + 1):
             try:
                 try:

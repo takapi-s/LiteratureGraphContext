@@ -11,6 +11,7 @@ import kuzu
 from litgraph.graph.graph_store import GraphQueryInterface
 from litgraph.query.comparison import build_comparison_rows, build_literature_matrix_rows
 from litgraph.utils.ids import claim_id, entity_id, evidence_id, limitation_id
+from litgraph.utils.workspace import DEFAULT_WORKSPACE, normalize_workspace_id
 
 REL_EXPORT_QUERIES: List[Tuple[str, str, str]] = [
     ("TARGETS", "Paper", "Task"),
@@ -32,11 +33,30 @@ REL_EXPORT_QUERIES: List[Tuple[str, str, str]] = [
 
 
 class KuzuGraphStore(GraphQueryInterface):
-    def __init__(self, db_path: Path, *, read_only: bool = False) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        *,
+        read_only: bool = False,
+        workspace_id: str = DEFAULT_WORKSPACE,
+    ) -> None:
         self.db_path = db_path
         self.read_only = read_only
+        self.workspace_id = normalize_workspace_id(workspace_id)
         self._db: Optional[kuzu.Database] = None
         self._conn: Optional[kuzu.Connection] = None
+
+    def _ws(self) -> Dict[str, str]:
+        return {"ws": self.workspace_id}
+
+    def _paper_scope(self, alias: str = "p") -> str:
+        return (
+            f"({alias}.workspace_id = $ws OR "
+            f"({alias}.workspace_id IS NULL AND $ws = 'default'))"
+        )
+
+    def _eid(self, entity_type: str, name: str) -> str:
+        return entity_id(entity_type, name, self.workspace_id)
 
     def _open_database(self) -> kuzu.Database:
         return kuzu.Database(str(self.db_path), read_only=self.read_only)
@@ -106,9 +126,16 @@ class KuzuGraphStore(GraphQueryInterface):
             except Exception:
                 pass
         for col, typ in [("authors", "STRING"), ("venue", "STRING"), ("doi", "STRING"), ("metadata_only", "BOOL"),
-                         ("source_path", "STRING"), ("source_stem", "STRING"), ("content_hash", "STRING")]:
+                         ("source_path", "STRING"), ("source_stem", "STRING"), ("content_hash", "STRING"),
+                         ("source_ref", "STRING"), ("zotero_key", "STRING"), ("workspace_id", "STRING")]:
             try:
                 self._execute(f"ALTER TABLE Paper ADD {col} {typ}")
+            except Exception:
+                pass
+        for label in ("Author", "Venue", "Task", "Method", "Dataset", "Metric",
+                      "Claim", "Contribution", "Limitation", "Evidence"):
+            try:
+                self._execute(f"ALTER TABLE {label} ADD workspace_id STRING")
             except Exception:
                 pass
 
@@ -117,16 +144,22 @@ class KuzuGraphStore(GraphQueryInterface):
         if isinstance(authors, str):
             authors = [a.strip() for a in authors.split(";") if a.strip()]
         for author in authors:
-            aid = entity_id("author", author)
-            self._execute("MERGE (a:Author {id: $id}) SET a.name = $name", {"id": aid, "name": author})
+            aid = self._eid("author", author)
+            self._execute(
+                "MERGE (a:Author {id: $id}) SET a.name = $name, a.workspace_id = $ws",
+                {"id": aid, "name": author, **self._ws()},
+            )
             self._execute(
                 "MATCH (p:Paper {id: $pid}), (a:Author {id: $aid}) MERGE (p)-[:AUTHORED_BY]->(a)",
                 {"pid": paper_id, "aid": aid},
             )
         venue = metadata.get("venue") or ""
         if venue:
-            vid = entity_id("venue", venue)
-            self._execute("MERGE (v:Venue {id: $id}) SET v.name = $name", {"id": vid, "name": venue})
+            vid = self._eid("venue", venue)
+            self._execute(
+                "MERGE (v:Venue {id: $id}) SET v.name = $name, v.workspace_id = $ws",
+                {"id": vid, "name": venue, **self._ws()},
+            )
             self._execute(
                 "MATCH (p:Paper {id: $pid}), (v:Venue {id: $vid}) MERGE (p)-[:PUBLISHED_IN]->(v)",
                 {"pid": paper_id, "vid": vid},
@@ -146,14 +179,21 @@ class KuzuGraphStore(GraphQueryInterface):
         self._execute(
             """
             MERGE (p:Paper {id: $id})
-            SET p.authors = $authors, p.venue = $venue, p.doi = $doi, p.metadata_only = false
+            SET p.authors = $authors, p.venue = $venue, p.doi = $doi, p.metadata_only = false,
+                p.workspace_id = $ws
             """,
-            {"id": paper_id, "authors": authors_str, "venue": venue, "doi": doi},
+            {"id": paper_id, "authors": authors_str, "venue": venue, "doi": doi, **self._ws()},
         )
         if title and title != paper_id:
             self._execute("MATCH (p:Paper {id: $id}) SET p.title = $title", {"id": paper_id, "title": title})
         if year is not None and year != -1:
             self._execute("MATCH (p:Paper {id: $id}) SET p.year = $year", {"id": paper_id, "year": year})
+        zotero_key = metadata.get("zotero_key") or ""
+        if zotero_key:
+            self._execute(
+                "MATCH (p:Paper {id: $id}) SET p.zotero_key = $zotero_key",
+                {"id": paper_id, "zotero_key": zotero_key},
+            )
         self._upsert_authors_and_venue(paper_id, metadata)
 
     def upsert_bib_only_paper(self, paper_id: str, metadata: Dict[str, Any]) -> None:
@@ -166,7 +206,7 @@ class KuzuGraphStore(GraphQueryInterface):
             """
             MERGE (p:Paper {id: $id})
             SET p.title = $title, p.year = $year, p.authors = $authors,
-                p.venue = $venue, p.doi = $doi, p.metadata_only = true
+                p.venue = $venue, p.doi = $doi, p.metadata_only = true, p.workspace_id = $ws
             """,
             {
                 "id": paper_id,
@@ -175,6 +215,7 @@ class KuzuGraphStore(GraphQueryInterface):
                 "authors": authors_str,
                 "venue": metadata.get("venue") or "",
                 "doi": metadata.get("doi") or "",
+                **self._ws(),
             },
         )
         self._upsert_authors_and_venue(paper_id, metadata)
@@ -219,9 +260,11 @@ class KuzuGraphStore(GraphQueryInterface):
         source_path = extraction.get("source_path") or ""
         source_stem = extraction.get("source_stem") or ""
         content_hash = extraction.get("content_hash") or ""
+        source_ref = extraction.get("source_ref") or ""
         self._execute(
             "MERGE (p:Paper {id: $id}) SET p.title = $title, p.year = $year, p.metadata_only = false, "
-            "p.source_path = $source_path, p.source_stem = $source_stem, p.content_hash = $content_hash",
+            "p.source_path = $source_path, p.source_stem = $source_stem, p.content_hash = $content_hash, "
+            "p.source_ref = $source_ref, p.workspace_id = $ws",
             {
                 "id": pid,
                 "title": title,
@@ -229,36 +272,50 @@ class KuzuGraphStore(GraphQueryInterface):
                 "source_path": source_path,
                 "source_stem": source_stem,
                 "content_hash": content_hash,
+                "source_ref": source_ref,
+                **self._ws(),
             },
         )
 
         for task in extraction.get("tasks", []):
-            tid = entity_id("task", task)
-            self._execute("MERGE (t:Task {id: $id}) SET t.name = $name", {"id": tid, "name": task})
+            tid = self._eid("task", task)
+            self._execute(
+                "MERGE (t:Task {id: $id}) SET t.name = $name, t.workspace_id = $ws",
+                {"id": tid, "name": task, **self._ws()},
+            )
             self._execute(
                 "MATCH (p:Paper {id: $pid}), (t:Task {id: $tid}) MERGE (p)-[:TARGETS]->(t)",
                 {"pid": pid, "tid": tid},
             )
 
         for method in extraction.get("methods", []):
-            mid = entity_id("method", method)
-            self._execute("MERGE (m:Method {id: $id}) SET m.name = $name", {"id": mid, "name": method})
+            mid = self._eid("method", method)
+            self._execute(
+                "MERGE (m:Method {id: $id}) SET m.name = $name, m.workspace_id = $ws",
+                {"id": mid, "name": method, **self._ws()},
+            )
             self._execute(
                 "MATCH (p:Paper {id: $pid}), (m:Method {id: $mid}) MERGE (p)-[:USES]->(m)",
                 {"pid": pid, "mid": mid},
             )
 
         for dataset in extraction.get("datasets", []):
-            did = entity_id("dataset", dataset)
-            self._execute("MERGE (d:Dataset {id: $id}) SET d.name = $name", {"id": did, "name": dataset})
+            did = self._eid("dataset", dataset)
+            self._execute(
+                "MERGE (d:Dataset {id: $id}) SET d.name = $name, d.workspace_id = $ws",
+                {"id": did, "name": dataset, **self._ws()},
+            )
             self._execute(
                 "MATCH (p:Paper {id: $pid}), (d:Dataset {id: $did}) MERGE (p)-[:EVALUATES_ON]->(d)",
                 {"pid": pid, "did": did},
             )
 
         for metric in extraction.get("metrics", []):
-            met_id = entity_id("metric", metric)
-            self._execute("MERGE (m:Metric {id: $id}) SET m.name = $name", {"id": met_id, "name": metric})
+            met_id = self._eid("metric", metric)
+            self._execute(
+                "MERGE (m:Metric {id: $id}) SET m.name = $name, m.workspace_id = $ws",
+                {"id": met_id, "name": metric, **self._ws()},
+            )
             self._execute(
                 "MATCH (p:Paper {id: $pid}), (m:Metric {id: $mid}) MERGE (p)-[:EVALUATES_WITH]->(m)",
                 {"pid": pid, "mid": met_id},
@@ -295,7 +352,7 @@ class KuzuGraphStore(GraphQueryInterface):
                 node_id = f"{kind}_{pid}_{i:03d}"
             self._execute(
                 f"MERGE (n:{label} {{id: $id}}) SET n.text = $text, n.paper_id = $paper_id, "
-                "n.page = $page, n.section = $section, n.evidence_text = $evidence_text",
+                "n.page = $page, n.section = $section, n.evidence_text = $evidence_text, n.workspace_id = $ws",
                 {
                     "id": node_id,
                     "text": item.get("text", ""),
@@ -303,6 +360,7 @@ class KuzuGraphStore(GraphQueryInterface):
                     "page": int(item.get("page", 1)),
                     "section": item.get("section", ""),
                     "evidence_text": item.get("evidence_text", ""),
+                    **self._ws(),
                 },
             )
             self._execute(
@@ -311,13 +369,15 @@ class KuzuGraphStore(GraphQueryInterface):
             )
             eid = evidence_id(pid, kind, i)
             self._execute(
-                "MERGE (e:Evidence {id: $id}) SET e.text = $text, e.paper_id = $paper_id, e.page = $page, e.section = $section",
+                "MERGE (e:Evidence {id: $id}) SET e.text = $text, e.paper_id = $paper_id, e.page = $page, "
+                "e.section = $section, e.workspace_id = $ws",
                 {
                     "id": eid,
                     "text": item.get("evidence_text", ""),
                     "paper_id": pid,
                     "page": int(item.get("page", 1)),
                     "section": item.get("section", ""),
+                    **self._ws(),
                 },
             )
             self._execute(
@@ -345,50 +405,58 @@ class KuzuGraphStore(GraphQueryInterface):
 
     def list_papers(self) -> List[Dict[str, Any]]:
         result = self._execute(
-            "MATCH (p:Paper) RETURN p.id AS paper_id, p.title AS title, p.year AS year, "
+            f"MATCH (p:Paper) WHERE {self._paper_scope('p')} "
+            "RETURN p.id AS paper_id, p.title AS title, p.year AS year, "
             "p.authors AS authors, p.venue AS venue, p.doi AS doi, p.metadata_only AS metadata_only "
-            "ORDER BY p.title"
+            "ORDER BY p.title",
+            self._ws(),
         )
         return self._rows(result)
 
     def get_paper(self, paper_id: str) -> Optional[Dict[str, Any]]:
         result = self._execute(
-            "MATCH (p:Paper {id: $id}) RETURN p.id AS paper_id, p.title AS title, p.year AS year, "
+            f"MATCH (p:Paper {{id: $id}}) WHERE {self._paper_scope('p')} "
+            "RETURN p.id AS paper_id, p.title AS title, p.year AS year, "
             "p.authors AS authors, p.venue AS venue, p.doi AS doi, p.metadata_only AS metadata_only",
-            {"id": paper_id},
+            {"id": paper_id, **self._ws()},
         )
         rows = self._rows(result)
         if not rows:
             return None
         paper = rows[0]
+        params = {"id": paper_id, **self._ws()}
         paper["methods"] = [r["name"] for r in self._rows(self._execute(
-            "MATCH (p:Paper {id: $id})-[:USES]->(m:Method) RETURN m.name AS name", {"id": paper_id}
+            f"MATCH (p:Paper {{id: $id}})-[:USES]->(m:Method) WHERE {self._paper_scope('m')} "
+            "RETURN m.name AS name", params
         ))]
         paper["tasks"] = [r["name"] for r in self._rows(self._execute(
-            "MATCH (p:Paper {id: $id})-[:TARGETS]->(t:Task) RETURN t.name AS name", {"id": paper_id}
+            f"MATCH (p:Paper {{id: $id}})-[:TARGETS]->(t:Task) WHERE {self._paper_scope('t')} "
+            "RETURN t.name AS name", params
         ))]
         paper["datasets"] = [r["name"] for r in self._rows(self._execute(
-            "MATCH (p:Paper {id: $id})-[:EVALUATES_ON]->(d:Dataset) RETURN d.name AS name", {"id": paper_id}
+            f"MATCH (p:Paper {{id: $id}})-[:EVALUATES_ON]->(d:Dataset) WHERE {self._paper_scope('d')} "
+            "RETURN d.name AS name", params
         ))]
         paper["metrics"] = [r["name"] for r in self._rows(self._execute(
-            "MATCH (p:Paper {id: $id})-[:EVALUATES_WITH]->(m:Metric) RETURN m.name AS name", {"id": paper_id}
+            f"MATCH (p:Paper {{id: $id}})-[:EVALUATES_WITH]->(m:Metric) WHERE {self._paper_scope('m')} "
+            "RETURN m.name AS name", params
         ))]
         paper["contributions"] = self._rows(self._execute(
-            "MATCH (p:Paper {id: $id})-[:HAS_CONTRIBUTION]->(c:Contribution) "
+            f"MATCH (p:Paper {{id: $id}})-[:HAS_CONTRIBUTION]->(c:Contribution) WHERE {self._paper_scope('c')} "
             "RETURN c.text AS text, c.page AS page, c.section AS section, c.evidence_text AS evidence_text",
-            {"id": paper_id},
+            params,
         ))
         paper["limitations"] = self._rows(self._execute(
-            "MATCH (p:Paper {id: $id})-[:HAS_LIMITATION]->(l:Limitation) "
+            f"MATCH (p:Paper {{id: $id}})-[:HAS_LIMITATION]->(l:Limitation) WHERE {self._paper_scope('l')} "
             "RETURN l.id AS limitation_id, l.text AS limitation, l.text AS text, "
             "l.page AS page, l.section AS section, l.evidence_text AS evidence_text",
-            {"id": paper_id},
+            params,
         ))
         paper["claims"] = self._rows(self._execute(
-            "MATCH (p:Paper {id: $id})-[:HAS_CLAIM]->(c:Claim) "
+            f"MATCH (p:Paper {{id: $id}})-[:HAS_CLAIM]->(c:Claim) WHERE {self._paper_scope('c')} "
             "RETURN c.id AS claim_id, c.text AS text, c.text AS claim, "
             "c.page AS page, c.section AS section, c.evidence_text AS evidence_text",
-            {"id": paper_id},
+            params,
         ))
         return paper
 
@@ -405,48 +473,53 @@ class KuzuGraphStore(GraphQueryInterface):
         if label not in allowed:
             return []
         result = self._execute(
-            f"MATCH (n:{label}) RETURN DISTINCT n.name AS name ORDER BY name",
-            {},
+            f"MATCH (n:{label}) WHERE (n.workspace_id = $ws OR (n.workspace_id IS NULL AND $ws = 'default')) "
+            "RETURN DISTINCT n.name AS name ORDER BY name",
+            self._ws(),
         )
         return [str(row["name"]) for row in self._rows(result) if row.get("name")]
 
     def find_papers_by_method(self, method: str) -> List[Dict[str, Any]]:
         result = self._execute(
-            "MATCH (p:Paper)-[:USES]->(m:Method) WHERE lower(m.name) CONTAINS lower($q) "
+            f"MATCH (p:Paper)-[:USES]->(m:Method) WHERE {self._paper_scope('p')} "
+            "AND lower(m.name) CONTAINS lower($q) "
             "RETURN p.id AS paper_id, p.title AS title, m.name AS method",
-            {"q": method},
+            {"q": method, **self._ws()},
         )
         return self._rows(result)
 
     def find_papers_by_task(self, task: str) -> List[Dict[str, Any]]:
         result = self._execute(
-            "MATCH (p:Paper)-[:TARGETS]->(t:Task) WHERE lower(t.name) CONTAINS lower($q) "
+            f"MATCH (p:Paper)-[:TARGETS]->(t:Task) WHERE {self._paper_scope('p')} "
+            "AND lower(t.name) CONTAINS lower($q) "
             "RETURN p.id AS paper_id, p.title AS title, t.name AS task",
-            {"q": task},
+            {"q": task, **self._ws()},
         )
         return self._rows(result)
 
     def find_limitations(self, topic: str) -> List[Dict[str, Any]]:
         result = self._execute(
-            """
+            f"""
             MATCH (p:Paper)-[:HAS_LIMITATION]->(l:Limitation)
-            WHERE lower(l.text) CONTAINS lower($q) OR lower(l.evidence_text) CONTAINS lower($q)
+            WHERE {self._paper_scope('p')}
+              AND (lower(l.text) CONTAINS lower($q) OR lower(l.evidence_text) CONTAINS lower($q))
             RETURN p.id AS paper_id, p.title AS title, l.text AS limitation,
                    l.page AS page, l.section AS section, l.evidence_text AS evidence_text
             """,
-            {"q": topic},
+            {"q": topic, **self._ws()},
         )
         return self._rows(result)
 
     def get_evidence_for_claim(self, claim_id_val: str) -> Optional[Dict[str, Any]]:
         result = self._execute(
-            """
-            MATCH (c:Claim {id: $id})-[:SUPPORTED_BY]->(e:Evidence)
-            OPTIONAL MATCH (p:Paper {id: c.paper_id})
+            f"""
+            MATCH (c:Claim {{id: $id}})-[:SUPPORTED_BY]->(e:Evidence)
+            OPTIONAL MATCH (p:Paper {{id: c.paper_id}})
+            WHERE {self._paper_scope('p')}
             RETURN c.id AS claim_id, c.text AS claim, c.paper_id AS paper_id,
                    p.title AS title, e.page AS page, e.section AS section, e.text AS evidence_text
             """,
-            {"id": claim_id_val},
+            {"id": claim_id_val, **self._ws()},
         )
         rows = self._rows(result)
         return rows[0] if rows else None
@@ -495,40 +568,45 @@ class KuzuGraphStore(GraphQueryInterface):
 
         if "CITES" in rels:
             rows = self._rows(self._execute(
-                "MATCH (p:Paper {id: $id})-[:CITES]->(n:Paper) RETURN n.id AS paper_id, n.title AS title",
-                {"id": paper_id},
+                f"MATCH (p:Paper {{id: $id}})-[:CITES]->(n:Paper) WHERE {self._paper_scope('p')} "
+                f"AND {self._paper_scope('n')} RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id, **self._ws()},
             ))
             for row in rows:
                 add_neighbor(row["paper_id"], row.get("title", ""), "CITES", "out")
 
         if "CITED_BY" in rels:
             rows = self._rows(self._execute(
-                "MATCH (n:Paper)-[:CITES]->(p:Paper {id: $id}) RETURN n.id AS paper_id, n.title AS title",
-                {"id": paper_id},
+                f"MATCH (n:Paper)-[:CITES]->(p:Paper {{id: $id}}) WHERE {self._paper_scope('p')} "
+                f"AND {self._paper_scope('n')} RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id, **self._ws()},
             ))
             for row in rows:
                 add_neighbor(row["paper_id"], row.get("title", ""), "CITED_BY", "in")
 
         if "CONTRASTS_WITH" in rels:
             rows = self._rows(self._execute(
-                "MATCH (p:Paper {id: $id})-[:CONTRASTS_WITH]-(n:Paper) RETURN n.id AS paper_id, n.title AS title",
-                {"id": paper_id},
+                f"MATCH (p:Paper {{id: $id}})-[:CONTRASTS_WITH]-(n:Paper) WHERE {self._paper_scope('p')} "
+                f"AND {self._paper_scope('n')} RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id, **self._ws()},
             ))
             for row in rows:
                 add_neighbor(row["paper_id"], row.get("title", ""), "CONTRASTS_WITH", "undirected")
 
         if "EXTENDS" in rels:
             rows = self._rows(self._execute(
-                "MATCH (p:Paper {id: $id})-[:EXTENDS]->(n:Paper) RETURN n.id AS paper_id, n.title AS title",
-                {"id": paper_id},
+                f"MATCH (p:Paper {{id: $id}})-[:EXTENDS]->(n:Paper) WHERE {self._paper_scope('p')} "
+                f"AND {self._paper_scope('n')} RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id, **self._ws()},
             ))
             for row in rows:
                 add_neighbor(row["paper_id"], row.get("title", ""), "EXTENDS", "out")
 
         if "EXTENDED_BY" in rels:
             rows = self._rows(self._execute(
-                "MATCH (n:Paper)-[:EXTENDS]->(p:Paper {id: $id}) RETURN n.id AS paper_id, n.title AS title",
-                {"id": paper_id},
+                f"MATCH (n:Paper)-[:EXTENDS]->(p:Paper {{id: $id}}) WHERE {self._paper_scope('p')} "
+                f"AND {self._paper_scope('n')} RETURN n.id AS paper_id, n.title AS title",
+                {"id": paper_id, **self._ws()},
             ))
             for row in rows:
                 add_neighbor(row["paper_id"], row.get("title", ""), "EXTENDED_BY", "in")
@@ -537,12 +615,12 @@ class KuzuGraphStore(GraphQueryInterface):
 
     def get_shared_method_neighbors(self, paper_id: str) -> List[Dict[str, Any]]:
         rows = self._rows(self._execute(
-            """
-            MATCH (p:Paper {id: $id})-[:USES]->(m:Method)<-[:USES]-(n:Paper)
-            WHERE n.id <> $id
+            f"""
+            MATCH (p:Paper {{id: $id}})-[:USES]->(m:Method)<-[:USES]-(n:Paper)
+            WHERE {self._paper_scope('p')} AND {self._paper_scope('n')} AND n.id <> $id
             RETURN DISTINCT n.id AS paper_id, n.title AS title, m.name AS method
             """,
-            {"id": paper_id},
+            {"id": paper_id, **self._ws()},
         ))
         return [
             {
@@ -622,7 +700,11 @@ class KuzuGraphStore(GraphQueryInterface):
             ("Evidence", ["id", "text", "paper_id", "page", "section"]),
         ]:
             cols = ", ".join(f"n.{f} AS {f}" for f in fields)
-            result = self._execute(f"MATCH (n:{label}) RETURN {cols}")
+            result = self._execute(
+                f"MATCH (n:{label}) WHERE (n.workspace_id = $ws OR (n.workspace_id IS NULL AND $ws = 'default')) "
+                f"RETURN {cols}",
+                self._ws(),
+            )
             for row in self._rows(result):
                 nodes.append({"type": label, **row})
 
@@ -630,7 +712,11 @@ class KuzuGraphStore(GraphQueryInterface):
         for rel, from_label, to_label in REL_EXPORT_QUERIES:
             try:
                 result = self._execute(
-                    f"MATCH (a:{from_label})-[r:{rel}]->(b:{to_label}) RETURN a.id AS source, b.id AS target"
+                    f"MATCH (a:{from_label})-[r:{rel}]->(b:{to_label}) "
+                    f"WHERE (a.workspace_id = $ws OR (a.workspace_id IS NULL AND $ws = 'default')) "
+                    f"AND (b.workspace_id = $ws OR (b.workspace_id IS NULL AND $ws = 'default')) "
+                    "RETURN a.id AS source, b.id AS target",
+                    self._ws(),
                 )
                 for row in self._rows(result):
                     edges.append({"type": rel, "source": row["source"], "target": row["target"]})
@@ -649,7 +735,10 @@ class KuzuGraphStore(GraphQueryInterface):
             except Exception:
                 pass
         try:
-            self._execute("MATCH (p:Paper {id: $id}) DETACH DELETE p", {"id": paper_id})
+            self._execute(
+                f"MATCH (p:Paper {{id: $id}}) WHERE {self._paper_scope('p')} DETACH DELETE p",
+                {"id": paper_id, **self._ws()},
+            )
         except Exception:
             pass
 

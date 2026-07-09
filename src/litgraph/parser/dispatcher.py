@@ -23,6 +23,8 @@ def parse_file(
     litgraph_dir: Optional[Path] = None,
     project_root: Optional[Path] = None,
     content_hash: str = "",
+    source_ref: str = "",
+    workspace_id: str = "default",
 ) -> Tuple[str, str]:
     """Parse one file. Returns (kind, paper_id_or_empty). kind: pdf|md|bib|skip"""
     suffix = file_path.suffix.lower()
@@ -38,8 +40,14 @@ def parse_file(
         if not sha and project_root:
             cache = load_cache(project_root / ".litgraph" / "cache" / "files.json")
             sha = (cache.get(rel_path) or {}).get("sha256", "")
-        existing = get_paper_id_for_path(litgraph_dir, rel_path)
-        paper_id = existing or assign_paper_id(litgraph_dir, rel_path, sha)
+        existing = get_paper_id_for_path(litgraph_dir, rel_path, workspace_id=workspace_id)
+        paper_id = existing or assign_paper_id(
+            litgraph_dir,
+            rel_path,
+            sha,
+            workspace_id=workspace_id,
+            source_ref=source_ref,
+        )
     else:
         from litgraph.utils.ids import paper_id_from_path
         paper_id = paper_id_from_path(file_path)
@@ -51,6 +59,8 @@ def parse_file(
         parsed["source_path"] = rel_path or str(file_path)
         parsed["content_hash"] = content_hash
         parsed["parse_paper_id"] = paper_id
+        if source_ref:
+            parsed["source_ref"] = source_ref
         ref_text = get_section_text(parsed, "References", "Bibliography")
         if ref_text:
             ref_data = parse_references_section(ref_text)
@@ -68,6 +78,8 @@ def parse_file(
         parsed["source_path"] = rel_path or str(file_path)
         parsed["content_hash"] = content_hash
         parsed["parse_paper_id"] = paper_id
+        if source_ref:
+            parsed["source_ref"] = source_ref
         out = parsed_cache_dir / f"{paper_id}.json"
         out.write_text(json.dumps(parsed, indent=2, ensure_ascii=False), encoding="utf-8")
         return "md", paper_id

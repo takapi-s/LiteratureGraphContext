@@ -8,15 +8,22 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
-def embeddings_path(litgraph_dir: Path) -> Path:
-    return litgraph_dir / "cache" / "embeddings.json"
+from litgraph.utils.workspace import DEFAULT_WORKSPACE, normalize_workspace_id
 
 
-def load_embeddings(litgraph_dir: Path) -> Dict[str, List[float]]:
-    path = embeddings_path(litgraph_dir)
+def embeddings_path(litgraph_dir: Path, workspace_id: str = DEFAULT_WORKSPACE) -> Path:
+    ws = normalize_workspace_id(workspace_id)
+    return litgraph_dir / "cache" / ws / "embeddings.json"
+
+
+def load_embeddings(litgraph_dir: Path, workspace_id: str = DEFAULT_WORKSPACE) -> Dict[str, List[float]]:
+    path = embeddings_path(litgraph_dir, workspace_id)
     if not path.exists():
-        return {}
+        legacy = litgraph_dir / "cache" / "embeddings.json"
+        if workspace_id == DEFAULT_WORKSPACE and legacy.exists():
+            path = legacy
+        else:
+            return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
@@ -24,8 +31,12 @@ def load_embeddings(litgraph_dir: Path) -> Dict[str, List[float]]:
     return {str(k): list(v) for k, v in (data or {}).items()}
 
 
-def save_embeddings(litgraph_dir: Path, embeddings: Dict[str, List[float]]) -> None:
-    path = embeddings_path(litgraph_dir)
+def save_embeddings(
+    litgraph_dir: Path,
+    embeddings: Dict[str, List[float]],
+    workspace_id: str = DEFAULT_WORKSPACE,
+) -> None:
+    path = embeddings_path(litgraph_dir, workspace_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(embeddings, indent=2), encoding="utf-8")
 
@@ -76,12 +87,13 @@ def index_paper_embeddings(
     papers: List[Dict[str, Any]],
     *,
     model: str = "text-embedding-3-small",
+    workspace_id: str = DEFAULT_WORKSPACE,
 ) -> Dict[str, Any]:
     """Build or refresh paper-level embeddings for search."""
     if not os.getenv("OPENAI_API_KEY"):
         return {"indexed": 0, "skipped": len(papers), "reason": "OPENAI_API_KEY not set"}
 
-    store = load_embeddings(litgraph_dir)
+    store = load_embeddings(litgraph_dir, workspace_id)
     to_index: List[tuple[str, str]] = []
     for paper in papers:
         pid = paper.get("paper_id")
@@ -100,5 +112,5 @@ def index_paper_embeddings(
 
     for (pid, _), vector in zip(to_index, vectors):
         store[pid] = vector
-    save_embeddings(litgraph_dir, store)
+    save_embeddings(litgraph_dir, store, workspace_id=workspace_id)
     return {"indexed": len(vectors), "skipped": 0, "model": model}

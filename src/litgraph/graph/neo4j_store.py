@@ -11,7 +11,10 @@ from litgraph.utils.ids import claim_id, entity_id, evidence_id, limitation_id
 
 
 class Neo4jGraphStore(GraphQueryInterface):
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any], workspace_id: str = "default") -> None:
+        from litgraph.utils.workspace import normalize_workspace_id
+
+        self.workspace_id = normalize_workspace_id(workspace_id)
         try:
             from neo4j import GraphDatabase
         except ImportError as exc:

@@ -70,9 +70,9 @@ def paper_id_from_metadata(
     return paper_slug_from_metadata(title, doi=doi, year=year, authors=authors)
 
 
-def entity_id(entity_type: str, name: str) -> str:
+def entity_id(entity_type: str, name: str, workspace_id: str = "default") -> str:
     normalized = re.sub(r"\s+", " ", name.strip().lower())
-    digest = hashlib.sha256(f"{entity_type}:{normalized}".encode()).hexdigest()[:12]
+    digest = hashlib.sha256(f"{workspace_id}:{entity_type}:{normalized}".encode()).hexdigest()[:12]
     prefix = entity_type.lower()
     return f"{prefix}_{digest}"
 

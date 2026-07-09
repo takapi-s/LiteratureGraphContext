@@ -35,6 +35,7 @@ def _store_for(ctx: ResolvedContext, *, read_only: bool = False):
         backend=backend,
         neo4j_config=_neo4j_config(ctx),
         read_only=read_only,
+        workspace_id=ctx.workspace_id,
     )
 
 
@@ -70,7 +71,7 @@ def build_graph(
                     metadata.update({k: v for k, v in extra.items() if v})
             store.upsert_paper_metadata(normalized["paper_id"], metadata)
 
-    catalog.save(ctx.litgraph_dir)
+    catalog.save(ctx.litgraph_dir, workspace_id=ctx.workspace_id)
 
     extraction_ids = {raw["paper_id"] for raw in extractions}
     bib_only = bib_only_entries(bib_entries, extraction_ids)
@@ -107,11 +108,16 @@ def build_graph(
 
     graph_json = store.export_graph_json()
     if export_json:
-        out_path = ctx.litgraph_dir / "graph.json"
+        out_path = ctx.cache_dir / "graph.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(graph_json, f, indent=2, ensure_ascii=False)
 
-    embedding_result = index_paper_embeddings(ctx.litgraph_dir, paper_metadata)
+    embedding_result = index_paper_embeddings(
+        ctx.litgraph_dir,
+        paper_metadata,
+        workspace_id=ctx.workspace_id,
+    )
 
     store.close()
     return {

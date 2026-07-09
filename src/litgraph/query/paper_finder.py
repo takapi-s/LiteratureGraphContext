@@ -27,12 +27,14 @@ class PaperFinder:
         *,
         read_only: bool = False,
         project_config: Optional[Dict[str, Any]] = None,
+        workspace_id: str = "default",
     ) -> None:
         self.db_path = db_path
         self.backend = backend
         self.neo4j_config = neo4j_config
         self.read_only = read_only
         self.project_config = project_config or {}
+        self.workspace_id = workspace_id
         self.litgraph_dir = db_path.parent.parent
         self._store = None
         self._closed = False
@@ -48,6 +50,7 @@ class PaperFinder:
                 backend=self.backend,
                 neo4j_config=self.neo4j_config,
                 read_only=self.read_only,
+                workspace_id=self.workspace_id,
             )
             if not self.read_only:
                 self._store.initialize_schema()
@@ -363,6 +366,7 @@ class PaperFinder:
             top_k=top_k,
             center_paper_id=center,
             litgraph_dir=self.litgraph_dir,
+            workspace_id=self.workspace_id,
         )
 
     def _papers_full(self) -> List[Dict[str, Any]]:

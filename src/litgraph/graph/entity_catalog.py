@@ -14,8 +14,12 @@ _CATALOG_FIELDS = (
 )
 
 
-def catalog_path(litgraph_dir: Path) -> Path:
-    return litgraph_dir / "cache" / "entity_catalog.json"
+from litgraph.utils.workspace import DEFAULT_WORKSPACE, normalize_workspace_id
+
+
+def catalog_path(litgraph_dir: Path, workspace_id: str = DEFAULT_WORKSPACE) -> Path:
+    ws = normalize_workspace_id(workspace_id)
+    return litgraph_dir / "cache" / ws / "entity_catalog.json"
 
 
 class EntityCatalog:
@@ -33,9 +37,13 @@ class EntityCatalog:
         return catalog
 
     @classmethod
-    def load(cls, litgraph_dir: Path) -> "EntityCatalog":
+    def load(cls, litgraph_dir: Path, workspace_id: str = DEFAULT_WORKSPACE) -> "EntityCatalog":
         catalog = cls()
-        path = catalog_path(litgraph_dir)
+        path = catalog_path(litgraph_dir, workspace_id)
+        if not path.exists() and workspace_id == DEFAULT_WORKSPACE:
+            legacy = litgraph_dir / "cache" / "entity_catalog.json"
+            if legacy.exists():
+                path = legacy
         if not path.exists():
             return catalog
         try:
@@ -73,8 +81,8 @@ class EntityCatalog:
         for dataset in extraction.get("datasets") or []:
             self.add("dataset", str(dataset))
 
-    def save(self, litgraph_dir: Path) -> None:
-        path = catalog_path(litgraph_dir)
+    def save(self, litgraph_dir: Path, workspace_id: str = DEFAULT_WORKSPACE) -> None:
+        path = catalog_path(litgraph_dir, workspace_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "methods": sorted(self._methods),

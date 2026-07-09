@@ -69,8 +69,9 @@ def _channel_embedding(
     papers: List[Dict[str, Any]],
     query: str,
     litgraph_dir,
+    workspace_id: str = "default",
 ) -> List[Dict[str, Any]]:
-    store = load_embeddings(litgraph_dir)
+    store = load_embeddings(litgraph_dir, workspace_id=workspace_id)
     if not store:
         return []
 
@@ -124,6 +125,7 @@ def search_papers(
     top_k: int = 10,
     center_paper_id: Optional[str] = None,
     litgraph_dir=None,
+    workspace_id: str = "default",
 ) -> Dict[str, Any]:
     query = (query or "").strip()
     if not query:
@@ -144,7 +146,7 @@ def search_papers(
         _channel_keyword_all(all_papers, query),
     ]
     if litgraph_dir is not None:
-        channels.append(_channel_embedding(all_papers, query, litgraph_dir))
+        channels.append(_channel_embedding(all_papers, query, litgraph_dir, workspace_id=workspace_id))
 
     ranked_lists = []
     for channel in channels:

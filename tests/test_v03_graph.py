@@ -12,7 +12,7 @@ def test_graph_export_includes_edges(project_tmp, monkeypatch):
     ctx = resolve_context(project_tmp)
     result = build_graph(ctx, FIXTURES)
     assert result["edges"] >= 0
-    graph_path = project_tmp / ".litgraph" / "graph.json"
+    graph_path = ctx.cache_dir / "graph.json"
     data = json.loads(graph_path.read_text(encoding="utf-8"))
     assert "edges" in data
     assert len(data["nodes"]) > 0
@@ -27,7 +27,7 @@ def test_full_compare(project_tmp, monkeypatch):
     build_graph(ctx, FIXTURES)
     from litgraph.query.paper_finder import PaperFinder
 
-    finder = PaperFinder(ctx.db_path, project_config=ctx.config)
+    finder = PaperFinder(ctx.db_path, project_config=ctx.config, workspace_id=ctx.workspace_id)
     result = finder.compare_papers(["mobility_gnn_2024", "event_forecasting_2025"])
     assert "metric" in result["papers"][0]
     assert "difference" in result["papers"][0]

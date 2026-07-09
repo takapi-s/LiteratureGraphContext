@@ -10,6 +10,8 @@ from typing import Any, Dict, Optional
 import yaml
 from dotenv import load_dotenv
 
+from litgraph.utils.workspace import DEFAULT_WORKSPACE, normalize_workspace_id, workspace_from_env
+
 GLOBAL_CONFIG_DIR = Path.home() / ".litgraph"
 GLOBAL_ENV_FILE = GLOBAL_CONFIG_DIR / ".env"
 PROJECT_DIR_NAME = ".litgraph"
@@ -76,6 +78,7 @@ class ResolvedContext:
     config: Dict[str, Any]
     db_path: Path
     cache_dir: Path
+    workspace_id: str = DEFAULT_WORKSPACE
 
     @property
     def files_cache_path(self) -> Path:
@@ -190,18 +193,27 @@ def resolve_project_root(cwd: Optional[Path] = None) -> Path:
     raise ProjectNotFoundError(Path.cwd())
 
 
-def resolve_context(cwd: Optional[Path] = None) -> ResolvedContext:
+def resolve_context(
+    cwd: Optional[Path] = None,
+    *,
+    workspace_id: Optional[str] = None,
+) -> ResolvedContext:
     project_root = resolve_project_root(cwd)
     litgraph_dir = project_root / PROJECT_DIR_NAME
+    ws = normalize_workspace_id(workspace_id or workspace_from_env())
 
     config = load_project_config(litgraph_dir)
-    cache_dir = litgraph_dir / "cache"
+    cache_dir = litgraph_dir / "cache" / ws
+    legacy_cache = litgraph_dir / "cache"
+    if ws == DEFAULT_WORKSPACE and not (cache_dir / "parsed").exists():
+        if (legacy_cache / "parsed").exists() or (legacy_cache / "files.json").exists():
+            cache_dir = legacy_cache
     db_path = litgraph_dir / "db" / "literature.kuzu"
     cache_dir.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    (litgraph_dir / "cache" / "parsed").mkdir(parents=True, exist_ok=True)
-    (litgraph_dir / "cache" / "extracted").mkdir(parents=True, exist_ok=True)
-    (litgraph_dir / "cache" / "bib").mkdir(parents=True, exist_ok=True)
+    (cache_dir / "parsed").mkdir(parents=True, exist_ok=True)
+    (cache_dir / "extracted").mkdir(parents=True, exist_ok=True)
+    (cache_dir / "bib").mkdir(parents=True, exist_ok=True)
 
     return ResolvedContext(
         project_root=project_root,
@@ -209,6 +221,7 @@ def resolve_context(cwd: Optional[Path] = None) -> ResolvedContext:
         config=config,
         db_path=db_path,
         cache_dir=cache_dir,
+        workspace_id=ws,
     )
 
 
