@@ -3,9 +3,35 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Optional
+
+from rich.console import Console
+from rich.prompt import Confirm, Prompt
+
+from litgraph.cli import config_manager
+
+console = Console(stderr=True)
+
+_PROVIDERS = ("openai", "anthropic", "gemini", "ollama")
+
+_PROVIDER_ENV_KEYS = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+}
+
+_PROVIDER_DEFAULT_MODELS = {
+    "openai": "gpt-4o-mini",
+    "anthropic": "claude-3-5-haiku-latest",
+    "gemini": "gemini-2.0-flash",
+    "ollama": "llama3.2",
+}
+
+_SERVER_NAME = "literature-graph-context"
 
 
 def resolve_litgraph_mcp_command() -> tuple[str, list[str]]:
@@ -21,7 +47,7 @@ def build_mcp_client_config(project_root: Path) -> dict:
     command, args = resolve_litgraph_mcp_command()
     return {
         "mcpServers": {
-            "literature-graph-context": {
+            _SERVER_NAME: {
                 "command": command,
                 "args": args,
                 "env": {
@@ -32,11 +58,160 @@ def build_mcp_client_config(project_root: Path) -> dict:
     }
 
 
-def configure_mcp_client(project_root: Path | None = None) -> Path:
-    root = project_root or Path.cwd()
-    config = build_mcp_client_config(root)
-    out = root / "mcp.json"
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
+def _merge_mcp_config(target: Path, project_root: Path) -> Path:
+    """Write or merge the litgraph server entry into an MCP config JSON file."""
+    entry = build_mcp_client_config(project_root)["mcpServers"][_SERVER_NAME]
+    existing: dict = {}
+    if target.exists():
+        try:
+            existing = json.loads(target.read_text(encoding="utf-8")) or {}
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+    servers = existing.setdefault("mcpServers", {})
+    servers[_SERVER_NAME] = entry
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2)
         f.write("\n")
+    return target
+
+
+def configure_mcp_client(project_root: Path | None = None) -> Path:
+    """Non-interactive: write mcp.json in the project root (legacy behavior)."""
+    root = project_root or Path.cwd()
+    return _merge_mcp_config(root / "mcp.json", root)
+
+
+def _claude_desktop_config_path() -> Path:
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        return base / "Claude" / "claude_desktop_config.json"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+
+def _ensure_project(root: Path) -> Path:
+    """Return the .litgraph dir, initializing the project interactively if needed."""
+    litgraph_dir = root / config_manager.PROJECT_DIR_NAME
+    if (litgraph_dir / "config.yaml").is_file():
+        console.print(f"[green]Project found:[/green] {litgraph_dir}")
+        return litgraph_dir
+    console.print(f"[yellow]No .litgraph project in {root}.[/yellow]")
+    papers_dir = Prompt.ask("Papers directory", default="./papers")
+    papers_path = Path(papers_dir)
+    if not papers_path.is_absolute():
+        papers_path = root / papers_path
+    papers_path.mkdir(parents=True, exist_ok=True)
+    litgraph_dir = config_manager.init_project(root, papers_dir=str(papers_path))
+    console.print(f"[green]Initialized[/green] {litgraph_dir}")
+    return litgraph_dir
+
+
+def _configure_llm(litgraph_dir: Path, root: Path) -> str:
+    config = config_manager.load_project_config(litgraph_dir)
+    current_provider = str(config.get("llm_provider", "openai"))
+    provider = Prompt.ask(
+        "LLM provider",
+        choices=list(_PROVIDERS),
+        default=current_provider if current_provider in _PROVIDERS else "openai",
+    )
+    default_model = (
+        str(config.get("llm_model"))
+        if provider == current_provider and config.get("llm_model")
+        else _PROVIDER_DEFAULT_MODELS[provider]
+    )
+    model = Prompt.ask("LLM model", default=default_model)
+    config_manager.save_config_value(litgraph_dir, "llm_provider", provider, root)
+    config_manager.save_config_value(litgraph_dir, "llm_model", model, root)
+    console.print(f"[green]Saved[/green] llm_provider={provider}, llm_model={model}")
+    return provider
+
+
+def _append_env_line(env_file: Path, key: str, value: str) -> None:
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    existing = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    env_file.write_text(existing + f"{key}={value}\n", encoding="utf-8")
+
+
+def _configure_api_key(provider: str) -> None:
+    env_key = _PROVIDER_ENV_KEYS.get(provider)
+    if not env_key:
+        console.print("[dim]Ollama runs locally; no API key needed.[/dim]")
+        return
+    config_manager.load_env()
+    if os.getenv(env_key):
+        console.print(f"[green]{env_key} already set.[/green]")
+        return
+    console.print(f"[yellow]{env_key} is not set.[/yellow]")
+    if not Confirm.ask(f"Store {env_key} in {config_manager.GLOBAL_ENV_FILE}?", default=True):
+        console.print(f"[dim]Skipped. Set {env_key} in your environment before extracting.[/dim]")
+        return
+    value = Prompt.ask(env_key, password=True)
+    if value.strip():
+        _append_env_line(config_manager.GLOBAL_ENV_FILE, env_key, value.strip())
+        console.print(f"[green]Saved[/green] {env_key} to {config_manager.GLOBAL_ENV_FILE}")
+    else:
+        console.print("[dim]Empty input; skipped.[/dim]")
+
+
+def _configure_client(root: Path) -> Path:
+    target_choice = Prompt.ask(
+        "MCP client",
+        choices=["cursor", "claude-desktop", "generic"],
+        default="cursor",
+    )
+    if target_choice == "cursor":
+        target = root / ".cursor" / "mcp.json"
+    elif target_choice == "claude-desktop":
+        target = _claude_desktop_config_path()
+    else:
+        target = root / "mcp.json"
+    out = _merge_mcp_config(target, root)
+    console.print(f"[green]Wrote[/green] {out}")
+    return out
+
+
+def _final_checks(root: Path) -> None:
+    litgraph_dir = root / config_manager.PROJECT_DIR_NAME
+    config = config_manager.load_project_config(litgraph_dir)
+    papers_dir = Path(str(config.get("papers_dir", "papers")))
+    if not papers_dir.is_absolute():
+        papers_dir = root / papers_dir
+    pdf_count = sum(1 for _ in papers_dir.glob("*.pdf")) if papers_dir.is_dir() else 0
+    db_dir = litgraph_dir / "db"
+    has_graph = (litgraph_dir / "graph.json").exists() or (
+        db_dir.is_dir() and any(db_dir.iterdir())
+    )
+
+    console.print("\n[bold]Status[/bold]")
+    console.print(f"  papers_dir: {papers_dir} ({pdf_count} PDF(s))")
+    console.print(f"  graph:      {'ready' if has_graph else 'not built'}")
+
+    if not has_graph:
+        console.print(
+            "\n[yellow]Graph is not built yet.[/yellow] Put PDFs in the papers "
+            "directory, then run:"
+        )
+        console.print("  litgraph scan && litgraph parse && litgraph extract && litgraph build")
+        console.print("  litgraph test-mcp")
+    else:
+        console.print("\n[dim]Verify MCP tools with:[/dim] litgraph test-mcp")
+    console.print("[dim]Restart your MCP client to pick up the new configuration.[/dim]")
+
+
+def run_setup_wizard(project_root: Path | None = None, yes: bool = False) -> Path:
+    """Interactive MCP onboarding: project, LLM, API key, client config, checks."""
+    root = (project_root or Path.cwd()).resolve()
+    if yes:
+        return configure_mcp_client(root)
+
+    console.print("[bold]LiteratureGraphContext MCP setup[/bold]\n")
+    litgraph_dir = _ensure_project(root)
+    provider = _configure_llm(litgraph_dir, root)
+    _configure_api_key(provider)
+    out = _configure_client(root)
+    _final_checks(root)
     return out

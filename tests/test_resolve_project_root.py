@@ -95,14 +95,19 @@ def test_env_root_without_config_raises(isolated_home: Path, monkeypatch):
     assert str(uninit) in str(exc_info.value)
 
 
-def test_mcp_raises_when_env_root_uninitialized(isolated_home: Path, monkeypatch):
+def test_mcp_degrades_when_env_root_uninitialized(isolated_home: Path, monkeypatch):
+    """Server must not crash at startup; tool calls return error + hint instead."""
     monkeypatch.setattr(config_manager, "GLOBAL_CONFIG_DIR", isolated_home / ".litgraph")
     uninit = isolated_home / "uninit"
     uninit.mkdir()
     monkeypatch.setenv("LITGRAPH_PROJECT_ROOT", str(uninit))
 
-    with pytest.raises(ProjectNotFoundError):
-        MCPToolService(cwd=uninit)
+    service = MCPToolService(cwd=uninit)
+    assert service.finder is None
+    result = service.handle_tool_call("list_papers", {})
+    assert "error" in result
+    assert "litgraph init" in result["hint"]
+    service.close()
 
 
 @pytest.fixture

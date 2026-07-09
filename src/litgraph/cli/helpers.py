@@ -690,8 +690,20 @@ def launch_visualizer(ctx: ResolvedContext, port: int = 8765, open_browser: bool
 
 
 def print_query_result(result: Dict[str, Any]) -> None:
+    if "error" in result:
+        console.print(f"[red]Error:[/red] {result['error']}")
+        if result.get("hint"):
+            console.print(f"[yellow]Hint:[/yellow] {result['hint']}")
+        details = {k: v for k, v in result.items() if k not in ("error", "hint") and v}
+        if details:
+            console.print_json(json.dumps(details, ensure_ascii=False))
+        return
     if "markdown_table" in result:
         console.print(result["markdown_table"])
+        if result.get("missing_ids"):
+            console.print(f"[yellow]Missing paper_ids:[/yellow] {', '.join(result['missing_ids'])}")
+            if result.get("hint"):
+                console.print(f"[yellow]Hint:[/yellow] {result['hint']}")
         return
     if "markdown_outline" in result:
         console.print(result["markdown_outline"])

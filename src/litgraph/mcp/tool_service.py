@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from litgraph.cli.config_manager import ResolvedContext, get_config_value, resolve_context
+from litgraph.cli.config_manager import (
+    ProjectNotFoundError,
+    ResolvedContext,
+    get_config_value,
+    resolve_context,
+)
 from litgraph.graph.graph_builder import _neo4j_config
 from litgraph.mcp import tool_definitions
 from litgraph.query.paper_finder import PaperFinder
@@ -41,7 +46,16 @@ class MCPToolService:
     """Shared tool execution logic for MCP transports."""
 
     def __init__(self, cwd: Optional[Path] = None) -> None:
-        self.ctx: ResolvedContext = resolve_context(cwd)
+        self.ctx: Optional[ResolvedContext] = None
+        self.finder: Optional[PaperFinder] = None
+        self._init_error: Optional[str] = None
+        try:
+            self.ctx = resolve_context(cwd)
+        except ProjectNotFoundError as exc:
+            # Keep the MCP server alive so tool calls return an actionable
+            # error instead of the transport crashing at startup.
+            self._init_error = str(exc)
+            return
         backend = str(get_config_value(self.ctx, "database", "LITGRAPH_DATABASE"))
         self.finder = PaperFinder(
             self.ctx.db_path,
@@ -56,6 +70,15 @@ class MCPToolService:
         return list(tool_definitions.TOOLS.values())
 
     def handle_tool_call(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        if self.finder is None:
+            return {
+                "error": self._init_error or "No LiteratureGraph project found.",
+                "hint": (
+                    "Run `litgraph init --papers-dir ./papers` in your repository, "
+                    "or set LITGRAPH_PROJECT_ROOT to an initialized project root, "
+                    "then restart the MCP server."
+                ),
+            }
         try:
             result = self._dispatch(name, args)
             if "error" not in result and "deprecated" not in result:
@@ -119,4 +142,5 @@ class MCPToolService:
         return apply_response_token_limit(name, text)
 
     def close(self) -> None:
-        self.finder.close()
+        if self.finder is not None:
+            self.finder.close()

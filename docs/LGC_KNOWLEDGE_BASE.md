@@ -84,7 +84,7 @@ Conventions:
 | I01 | Hybrid search entry (embeddings + keyword + graph) | red | v0.5 ✅ |
 | I02 | New inputs: arXiv/URL/Zotero/CSV connectors | red | v0.9, v0.11 |
 | I03 | Containment relations: section/subsection + CONTAINS edges | amber | TBD |
-| I04 | PDF structure: robust section detection + diagnostics | amber | v0.8 |
+| I04 | PDF structure: robust section detection + diagnostics | amber | v0.11 |
 | I05 | Citations: merge refs + bib better (CITES quality) | pink | TBD |
 | I06 | ID resolution & errors: actionable hints in MCP/CLI | blue | v0.8+ |
 | I07 | Auto-generate `paper_id_map` from `paper_registry` | green | TBD |
@@ -158,3 +158,36 @@ Suggested design (high level):
 - Query-time: `search_papers(query)` uses hybrid retrieval (embedding + keyword + aliases) to return candidate `paper_id` with `score` and `match_reason`.
 - Then reuse existing tools: `summarize_paper`, `compare_papers`, `find_limitations` for citation-ready outputs.
 
+---
+
+## 2026-07-09 - Roadmap reprioritization (docs & PDF parsing)
+
+- What we learned / decided:
+  - Documentation and tutorial belong at **v1.0**, not v0.8. README quick start is enough until ingest paths (local folder, URL/arXiv, Zotero) stabilize.
+  - PDF section detection + diagnostics (I04) moves from v0.8 to **v0.11**, alongside Zotero PDF fetch. Basic patterns already exist in `section_splitter.py`; robustness matters most when PDFs arrive from external sources.
+  - v0.8 narrows to **local UX**: MCP setup wizard (I13), ID/error hints (I06), Graph UI sidebar (I08).
+- Why it matters (trade-offs, failure modes, constraints):
+  - Writing a full tutorial before v0.9–v0.11 lands means rewriting it when API, workspace, and Zotero workflows change.
+  - Interactive onboarding (wizard + actionable errors) reduces the need for prose docs during development.
+- Where it's implemented (paths / commands / tool names):
+  - `ROADMAP.md` — version roadmap and "Current focus (v0.8)" table
+  - `docs/LGC_KNOWLEDGE_BASE.md` — idea index I04 target
+- Verification (what to check / how to reproduce):
+  - `ROADMAP.md` v0.8 has no docs/PDF items; v0.11 lists I04; v1.0 lists docs + PyPI.
+
+---
+
+## 2026-07-09 - Version numbering: 0.12 / 0.13 then 1.0, then 1.x
+
+- What we learned / decided:
+  - Pre-PyPI development continues on **0.x** through **0.13** (0.12 = HTTP MCP + watch; 0.13 = source expansion).
+  - **1.0** = first PyPI stable release + documentation (after 0.13).
+  - Post-1.0 features use **semver minor** starting at **1.1** for unassigned IDEA items (I03, I05, I07, …).
+  - **2.0** reserved for breaking API changes (not planned yet).
+- Why it matters:
+  - Keeps all pre-release milestones in one 0.x line; 1.0 is the public baseline, 1.1+ are incremental post-release updates.
+- Where it's implemented:
+  - `ROADMAP.md` — `0.7 → … → 0.13 → 1.0 → 1.1+` flow
+  - Idea index I11/I12 → v0.12
+- Verification:
+  - No post-1.0 v1.1/v1.2 sections for HTTP MCP or source expansion; those are v0.12/v0.13 under Pre-1.0.

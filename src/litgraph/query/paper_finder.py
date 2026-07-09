@@ -11,7 +11,11 @@ from litgraph.graph.entity_resolver import EntityResolver
 from litgraph.query.comparison import comparison_markdown
 from litgraph.query.paper_search import search_papers as hybrid_search_papers
 from litgraph.query.related_work import generate_related_work_outline
-from litgraph.utils.paper_identity import normalize_paper_id_input, resolve_canonical_paper_id
+from litgraph.utils.paper_identity import (
+    normalize_paper_id_input,
+    resolve_canonical_paper_id,
+    resolve_paper_id_from_registry,
+)
 
 
 class PaperFinder:
@@ -63,7 +67,49 @@ class PaperFinder:
 
     def _resolve_paper_id(self, paper_id: str) -> str:
         pid = normalize_paper_id_input(paper_id)
-        return resolve_canonical_paper_id(self.litgraph_dir, pid)
+        resolved = resolve_canonical_paper_id(self.litgraph_dir, pid)
+        if resolved != pid:
+            return resolved
+        from_registry = resolve_paper_id_from_registry(self.litgraph_dir, pid)
+        if from_registry:
+            return from_registry
+        return pid
+
+    def _did_you_mean(self, query: str, limit: int = 3) -> List[Dict[str, str]]:
+        """Fuzzy-match query against known paper ids, titles, and source stems."""
+        import difflib
+
+        from litgraph.utils.paper_registry import load_registry
+
+        candidates: Dict[str, str] = {}
+        for row in self.list_papers():
+            pid = str(row.get("paper_id") or "")
+            if not pid:
+                continue
+            candidates.setdefault(pid.lower(), pid)
+            title = str(row.get("title") or "")
+            if title:
+                candidates.setdefault(title.lower(), pid)
+        for source_path, entry in load_registry(self.litgraph_dir).items():
+            pid = str(entry.get("paper_id") or "")
+            stem = Path(source_path).stem
+            if pid and stem:
+                candidates.setdefault(stem.lower(), pid)
+
+        matches = difflib.get_close_matches(
+            query.lower(), list(candidates.keys()), n=limit * 2, cutoff=0.6
+        )
+        out: List[Dict[str, str]] = []
+        seen: set = set()
+        for match in matches:
+            pid = candidates[match]
+            if pid in seen:
+                continue
+            seen.add(pid)
+            out.append({"paper_id": pid, "matched": match})
+            if len(out) >= limit:
+                break
+        return out
 
     def _paper_not_found_error(self, paper_id: str) -> Dict[str, Any]:
         suggestions = self.search_papers(paper_id, top_k=5)
@@ -75,9 +121,21 @@ class PaperFinder:
                 mapping = json.loads(map_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 mapping = {}
+        if not self.list_papers():
+            hint = (
+                "No papers are indexed yet. Run: "
+                "litgraph scan && litgraph parse && litgraph extract && litgraph build"
+            )
+        else:
+            hint = (
+                "Call search_papers with a title or topic keyword to obtain a valid "
+                "paper_id, or pass the source filename (e.g. mypaper_2024.pdf)."
+            )
         return {
             "error": f"Paper not found: {paper_id}",
+            "hint": hint,
             "resolved_id": self._resolve_paper_id(paper_id),
+            "did_you_mean": self._did_you_mean(paper_id),
             "suggestions": suggestions.get("papers", []),
             "paper_id_map_entries": {
                 k: v for k, v in mapping.items()
@@ -177,7 +235,20 @@ class PaperFinder:
     def compare_papers(self, paper_ids: List[str]) -> Dict[str, Any]:
         resolved = [self._resolve_paper_id(pid) for pid in paper_ids]
         rows = self.store.compare_papers(resolved)
-        return {"papers": rows, "markdown_table": comparison_markdown(rows)}
+        result: Dict[str, Any] = {"papers": rows, "markdown_table": comparison_markdown(rows)}
+        found = {str(row.get("paper_id")) for row in rows}
+        missing = [
+            original
+            for original, res in zip(paper_ids, resolved)
+            if res not in found and original not in found
+        ]
+        if missing:
+            result["missing_ids"] = missing
+            result["hint"] = (
+                "Some paper_ids were not found and are excluded from the comparison. "
+                "Call search_papers to obtain valid paper_id values."
+            )
+        return result
 
     def build_literature_matrix(self, topic: str) -> Dict[str, Any]:
         rows = self.store.build_literature_matrix(topic)

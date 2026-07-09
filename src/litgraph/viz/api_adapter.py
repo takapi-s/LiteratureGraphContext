@@ -32,22 +32,23 @@ def _paper_summaries(
     paper_nodes = [n for n in raw_nodes if str(n.get("type")) == "Paper"]
     claim_counts: Dict[str, int] = {}
     limitation_counts: Dict[str, int] = {}
+    contribution_counts: Dict[str, int] = {}
 
+    counters = {
+        "HAS_CLAIM": claim_counts,
+        "HAS_LIMITATION": limitation_counts,
+        "HAS_CONTRIBUTION": contribution_counts,
+    }
     for edge in raw_edges:
-        rel = str(edge.get("type") or "")
+        counter = counters.get(str(edge.get("type") or ""))
+        if counter is None:
+            continue
         target = str(edge.get("target") or "")
-        if rel == "HAS_CLAIM":
-            for node in raw_nodes:
-                if str(node.get("id")) == target:
-                    pid = str(node.get("paper_id") or "")
-                    if pid:
-                        claim_counts[pid] = claim_counts.get(pid, 0) + 1
-        elif rel == "HAS_LIMITATION":
-            for node in raw_nodes:
-                if str(node.get("id")) == target:
-                    pid = str(node.get("paper_id") or "")
-                    if pid:
-                        limitation_counts[pid] = limitation_counts.get(pid, 0) + 1
+        for node in raw_nodes:
+            if str(node.get("id")) == target:
+                pid = str(node.get("paper_id") or "")
+                if pid:
+                    counter[pid] = counter.get(pid, 0) + 1
 
     methods_by_paper: Dict[str, List[str]] = {}
     tasks_by_paper: Dict[str, List[str]] = {}
@@ -78,6 +79,7 @@ def _paper_summaries(
             "tasks": tasks_by_paper.get(pid, []),
             "claim_count": claim_counts.get(pid, 0),
             "limitation_count": limitation_counts.get(pid, 0),
+            "contribution_count": contribution_counts.get(pid, 0),
         })
     return summaries
 

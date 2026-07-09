@@ -370,6 +370,8 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
   const [simulationReady, setSimulationReady] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
+  const paperSummaries = useMemo(() => data.papers || [], [data.papers]);
+
   const selectedPaper = useMemo(() => {
     if (!selectedFile) return null;
     const paperId = selectedFile.startsWith("papers/") ? selectedFile.slice("papers/".length) : selectedFile;
@@ -920,7 +922,6 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
   };
 
   const fileTree = useMemo(() => buildTree(data.files || []), [data.files]);
-  const paperSummaries = useMemo(() => data.papers || [], [data.papers]);
 
   const city3dData = useMemo(() => {
     if (graphMode !== 'city3d') return filteredData;
@@ -1048,6 +1049,19 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
     if (!selectedFile) return [];
     return data.nodes.filter((n: any) => n.file === selectedFile);
   }, [data.nodes, selectedFile]);
+
+  const ENTITY_SECTIONS = ['Claim', 'Limitation', 'Contribution', 'Evidence'];
+
+  const groupedEntities = useMemo(() => {
+    const groups = new Map<string, any[]>();
+    for (const n of fileEntities) {
+      if (n.type === 'Paper') continue;
+      const key = ENTITY_SECTIONS.includes(n.type) ? n.type : 'Other';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(n);
+    }
+    return groups;
+  }, [fileEntities]);
 
   const onDetailDragStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1812,7 +1826,7 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
                   <div className="flex items-center gap-2 min-w-0">
                     <BookOpen className="w-4 h-4 text-purple-400 flex-shrink-0" />
                     <span className="text-[13px] font-bold truncate" style={{ color: pal.text }}>
-                      {selectedFile.split('/').pop()}
+                      {selectedPaper?.title || selectedFile.split('/').pop()}
                     </span>
                   </div>
                   <button
@@ -1893,41 +1907,86 @@ export default function LiteratureGraphViewer({ data: rawData, onClose }: { data
                       <div className="mt-3 text-[10px] uppercase tracking-widest font-black flex gap-3" style={{ color: pal.dimText }}>
                         <span>{selectedPaper.claim_count ?? 0} claims</span>
                         <span>{selectedPaper.limitation_count ?? 0} limitations</span>
+                        <span>{selectedPaper.contribution_count ?? 0} contributions</span>
                       </div>
                     </div>
                   )}
 
-                  <div className="space-y-2">
-                    {fileEntities.map((n: any) => {
-                      const page = n.properties?.page;
-                      const section = n.properties?.section;
-                      const evidence = n.properties?.evidence_text;
-                      return (
-                        <div
-                          key={n.id}
-                          className={`rounded-lg p-2.5 ${isDark ? 'hover:bg-purple-500/10' : 'hover:bg-black/5'}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            {graphMode === 'icon' ? (
-                              <span className="text-[14px] flex-shrink-0">{EMOJI_MAP[n.type] || '❓'}</span>
-                            ) : (
-                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: nodeColors[n.type] || '#78909c' }} />
-                            )}
-                            <span className="text-[12px] font-medium truncate" style={{ color: pal.textSecondary }}>{n.name}</span>
-                            <span className="text-[9px] uppercase tracking-wider ml-auto flex-shrink-0" style={{ color: pal.dimText }}>
-                              {n.type}
-                            </span>
+                  <div className="space-y-4">
+                    {[...ENTITY_SECTIONS, 'Other'].map((sectionType) => {
+                      const items = groupedEntities.get(sectionType);
+                      if (!items || items.length === 0) return null;
+                      if (sectionType === 'Other') {
+                        return (
+                          <div key="section-other">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-[10px] uppercase tracking-widest font-black" style={{ color: pal.dimText }}>
+                                Related entities
+                              </span>
+                              <span className="text-[9px]" style={{ color: pal.dimText }}>{items.length}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {items.map((n: any) => (
+                                <span
+                                  key={n.id}
+                                  className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full border ${
+                                    isDark ? 'bg-white/3 border-white/10' : 'bg-black/3 border-black/10'
+                                  }`}
+                                  style={{ color: pal.textSecondary }}
+                                  title={`${n.type}: ${n.name}`}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: nodeColors[n.type] || '#78909c' }} />
+                                  {n.name}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                          {(page || section) && (
-                            <div className="mt-1 px-1 text-[9px] text-gray-500">
-                              {[section, page ? `p.${page}` : null].filter(Boolean).join(' · ')}
-                            </div>
-                          )}
-                          {evidence && (
-                            <div className="mt-1 px-1 text-[10px] text-gray-400 line-clamp-3 italic">
-                              "{evidence}"
-                            </div>
-                          )}
+                        );
+                      }
+                      return (
+                        <div key={`section-${sectionType}`}>
+                          <div className="flex items-center gap-2 mb-2">
+                            {graphMode === 'icon' ? (
+                              <span className="text-[13px]">{EMOJI_MAP[sectionType] || '❓'}</span>
+                            ) : (
+                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: nodeColors[sectionType] || '#78909c' }} />
+                            )}
+                            <span className="text-[10px] uppercase tracking-widest font-black" style={{ color: pal.dimText }}>
+                              {sectionType}s
+                            </span>
+                            <span className="text-[9px]" style={{ color: pal.dimText }}>{items.length}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {items.map((n: any) => {
+                              const page = n.properties?.page;
+                              const section = n.properties?.section;
+                              const evidence = n.properties?.evidence_text;
+                              return (
+                                <div
+                                  key={n.id}
+                                  className={`rounded-lg border p-2.5 ${
+                                    isDark
+                                      ? 'bg-white/3 border-white/8 hover:bg-purple-500/10 hover:border-purple-500/20'
+                                      : 'bg-black/2 border-black/8 hover:bg-black/5'
+                                  }`}
+                                >
+                                  <div className="text-[12px] font-medium leading-snug" style={{ color: pal.textSecondary }}>
+                                    {n.name}
+                                  </div>
+                                  {(page || section) && (
+                                    <div className="mt-1 text-[9px] text-gray-500">
+                                      {[section, page ? `p.${page}` : null].filter(Boolean).join(' · ')}
+                                    </div>
+                                  )}
+                                  {evidence && (
+                                    <div className="mt-1 text-[10px] text-gray-400 line-clamp-3 italic">
+                                      "{evidence}"
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       );
                     })}

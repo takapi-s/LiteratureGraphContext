@@ -14,7 +14,7 @@ from rich.console import Console
 from litgraph import __version__
 from litgraph.cli import config_manager, helpers
 from litgraph.cli.config_manager import ProjectNotFoundError, ResolvedContext
-from litgraph.mcp.setup_wizard import configure_mcp_client
+from litgraph.mcp.setup_wizard import run_setup_wizard
 
 app = typer.Typer(name="litgraph", help="LiteratureGraphContext: papers to knowledge graph.")
 config_app = typer.Typer(help="Project configuration commands.")
@@ -607,10 +607,16 @@ def serve_mcp() -> None:
 
 
 @mcp_app.command("setup")
-def mcp_setup() -> None:
-    """Generate mcp.json for Cursor / Claude Desktop."""
-    out = configure_mcp_client()
-    console.print(f"[green]Wrote[/green] {out}")
+def mcp_setup(
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project root"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Non-interactive: write mcp.json in the project root"
+    ),
+) -> None:
+    """Interactive MCP onboarding (project, LLM, API key, client config)."""
+    out = run_setup_wizard(path.resolve(), yes=yes)
+    if yes:
+        console.print(f"[green]Wrote[/green] {out}")
 
 
 @app.command("version")

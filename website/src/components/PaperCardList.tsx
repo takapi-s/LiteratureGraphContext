@@ -9,6 +9,7 @@ export type PaperSummary = {
   tasks?: string[];
   claim_count?: number;
   limitation_count?: number;
+  contribution_count?: number;
 };
 
 type PaperCardListProps = {
@@ -96,6 +97,8 @@ export function PaperCardList({
                   {paper.claim_count ?? 0} claim{(paper.claim_count ?? 0) === 1 ? '' : 's'}
                   {' · '}
                   {paper.limitation_count ?? 0} limitation{(paper.limitation_count ?? 0) === 1 ? '' : 's'}
+                  {' · '}
+                  {paper.contribution_count ?? 0} contribution{(paper.contribution_count ?? 0) === 1 ? '' : 's'}
                 </div>
               </div>
             </div>

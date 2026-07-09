@@ -50,6 +50,29 @@ def resolve_canonical_paper_id(litgraph_dir: Path, paper_id: str) -> str:
     return paper_id
 
 
+def resolve_paper_id_from_registry(litgraph_dir: Path, candidate: str) -> Optional[str]:
+    """Resolve a source filename, stem, or path from paper_registry.json to a paper_id.
+
+    Lets callers pass e.g. ``mobility_gnn_2024`` or ``mobility_gnn_2024.pdf``
+    instead of the opaque UUID assigned at ingest.
+    """
+    from litgraph.utils.paper_registry import load_registry
+
+    text = (candidate or "").strip()
+    if not text:
+        return None
+    lowered = text.lower().replace("\\", "/")
+    for source_path, entry in load_registry(litgraph_dir).items():
+        pid = str(entry.get("paper_id") or "")
+        if not pid:
+            continue
+        normalized = source_path.lower().replace("\\", "/")
+        path = Path(source_path)
+        if lowered in (normalized, path.name.lower(), path.stem.lower()):
+            return pid
+    return None
+
+
 def normalize_paper_id_input(paper_id: str) -> str:
     pid = (paper_id or "").strip()
     if pid.startswith("paper_"):
