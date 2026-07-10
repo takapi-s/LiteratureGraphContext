@@ -108,6 +108,23 @@ litgraph setup          # recommended onboarding
 # litgraph mcp setup    # alias of the same wizard
 ```
 
+### Background daemon (Zotero auto-sync)
+
+Run a single long-lived process for Zotero polling, optional folder watch, HTTP MCP, and a settings page:
+
+```bash
+litgraph daemon
+# Settings UI: http://127.0.0.1:8766/
+# MCP endpoint: http://127.0.0.1:8766/mcp
+```
+
+During `litgraph setup`, choose **daemon-http** MCP transport so Cursor connects to the daemon instead of spawning stdio `serve-mcp` (avoids Kuzu lock conflicts on Windows).
+
+**Windows autostart:** open Task Scheduler → Create Task → Trigger: At log on → Action: `litgraph daemon` with *Start in* set to your project root. Ensure `ZOTERO_API_KEY` is in `~/.litgraph/.env`.
+
+Configure sync interval and `extract_mode` (`auto` / `manual`) from the daemon settings page (`/`).
+
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for planned features and known gaps.

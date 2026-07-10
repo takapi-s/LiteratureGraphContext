@@ -35,8 +35,9 @@ LGC is a **structured evidence layer** (not an interpretation engine).
 | ✅ | v0.11 Zotero + PDF | Full pipeline + PDF section improvements complete |
 | ✅ | v0.12 Remote MCP & watch | HTTP MCP + `watch_papers_directory` complete |
 | 1 | v0.13 Paper structuring | Section hierarchy, citation linking, extraction quality, evidence grounding |
-| Last | v1.0 docs + PyPI | Write once after v0.13 + workflows are settled |
-| Later | v1.1, v1.2, … | Post-1.0 feature additions via semver minor |
+| Last | v1.0 PyPI + docs | First stable `pip install literature-graph` after v0.13 |
+| Next | v1.1 Background daemon | Zotero auto-sync, HTTP MCP hub, settings UI (mostly shipped) |
+| Later | v1.x → v2.0 | v1.x: packaging prep (PyInstaller, supervisor); **v2.0: OS installers** (Python not required) |
 
 **v0.13 scope** (in recommended order — measure first, then improve):
 
@@ -62,20 +63,21 @@ Uncommitted, uncertain ideas. Edit `docs/assets/idea_matrix.drawio.svg` (draw.io
 | ID | Idea | Target |
 |---|---|---|
 | I01 | Hybrid search entry (embeddings + keyword + graph) | v0.5 ✅ |
-| I02 | New inputs: arXiv / URL / Zotero connectors ✅ — CSV not implemented | v0.9, v0.11 ✅ / CSV → v1.1 candidate |
+| I02 | New inputs: arXiv / URL / Zotero connectors ✅ — CSV not implemented | v0.9, v0.11 ✅ / CSV → v1.2+ candidate |
 | I03 | Containment: section / subsection + `CONTAINS` edges (+ section embeddings) | v0.13 |
 | I04 | PDF structure: robust section detection + diagnostics | detection v0.11 ✅ / diagnostics v0.13 |
 | I05 | Citations: `CITES` resolution accuracy (external IDs) — refs+bib merge shipped | v0.13 |
 | I06 | ID resolution & errors: actionable hints in MCP / CLI | v0.8 ✅ |
-| I07 | Auto-generate `paper_id_map` from `paper_registry` | v1.1 candidate |
+| I07 | Auto-generate `paper_id_map` from `paper_registry` | v1.2+ candidate |
 | I08 | Graph UI: paper-centric sidebar + preview cards | v0.8 ✅ |
 | I09 | Workspace-scoped graph (`workspace_id` on nodes & queries) | v0.10 ✅ |
 | I10 | Programmatic API (`LitgraphContext`, injectable store) | v0.9 ✅ |
 | I11 | HTTP MCP transport (remote callers) | v0.12 ✅ |
 | I12 | Folder watch / auto-ingest (`watch_papers_directory`) | v0.12 ✅ |
 | I13 | MCP setup wizard (interactive onboarding) | v0.8 ✅ |
-| I14 | Zotero write-back: push extracted limitations / comparisons to Zotero tags & notes | v1.1 candidate |
+| I14 | Zotero write-back: push extracted limitations / comparisons to Zotero tags & notes | v1.2+ candidate |
 | I15 | In-graph embeddings: vectors as node properties + vector index (Kuzu HNSW / Neo4j), retire `embeddings.json` | v0.13 |
+| I16 | End-user distribution: PyInstaller frozen exe, PySide6 tray supervisor, Inno Setup / DMG / deb, GitHub Releases | v1.x spike / **v2.0 ship** |
 
 ---
 
@@ -91,8 +93,9 @@ Uncommitted, uncertain ideas. Edit `docs/assets/idea_matrix.drawio.svg` (draw.io
 | MCP tool surface (14 → 6 tools) | **Done (v0.7)** | 6 core query tools; ingest is CLI-only |
 | PDF parsing | **Active (v0.13)** | Harden section detection, diagnostics, edge cases (I04) |
 | Graph UI | **Done (v0.8)** | Paper sidebar + type-specific preview cards (I08) |
-| MCP stability | Planned (v1.0 docs) | Document single-writer policy for Kuzu |
-| Zotero | **Done (v0.11)** | Full PDF pipeline shipped |
+| MCP stability | **Done (v1.1 daemon)** / docs (v1.0) | `litgraph daemon` single-writer hub; document HTTP MCP + avoid stdio lock conflicts |
+| Zotero | **Done (v0.11)** | Full PDF pipeline shipped; incremental sync in daemon (v1.1) |
+| Distribution | **Active (v2.0)** | v1.0 = PyPI (`pip install`); v2.0 = PyInstaller bundle + Inno Setup / DMG + system-tray supervisor |
 | Embedding store (JSON sidecar, full load + O(n) cosine) | **Active (v0.13)** | In-graph vectors + vector index, Kuzu & Neo4j (I15) |
 | md parser | Deferred | Single-paper notes only |
 | Neo4j migration | Deferred | No migration tool from Kuzu |
@@ -106,17 +109,24 @@ Uncommitted, uncertain ideas. Edit `docs/assets/idea_matrix.drawio.svg` (draw.io
 
 **Versioning policy**
 
+Distribution has **two channels** — do not conflate them:
+
+| Channel | Version | Audience | Install |
+|---|---|---|---|
+| **PyPI** | **1.0** | Developers / researchers | `pip install literature-graph` |
+| **Installer** | **2.0** | End users (no Python) | `.exe` / `.dmg` / `.deb` from GitHub Releases |
+
 | Series | Meaning |
 |---|---|
 | **0.x** | Pre-PyPI development releases (current: 0.12.0 → 0.13) |
-| **1.0** | First stable PyPI release + documentation |
-| **1.x** | Feature additions after 1.0 (semver minor) |
-| **2.0** | When breaking API changes are required (TBD) |
+| **1.0** | First stable **PyPI** release + documentation |
+| **1.x** | Feature additions after 1.0 (semver minor); includes background daemon (v1.1) |
+| **2.0** | **End-user distribution** — PyInstaller-frozen binaries, OS installers (Inno Setup / DMG / deb), PySide6 system-tray supervisor, logon autostart, GitHub Releases + WinGet (breaking API changes may ride along) |
 
 ```text
-0.7 ✅ → … → 0.12 ✅ → 0.13 → 1.0 → 1.1 → …
-  │                         │       │
-  └─ pre-PyPI development   └─ now  └─ post-1.0 expansion
+0.7 ✅ → … → 0.12 ✅ → 0.13 → 1.0 (PyPI) → 1.1 (daemon) → 1.x → 2.0 (installer)
+  │                         │              │                │
+  └─ pre-PyPI development   └─ now         └─ pip install   └─ frozen exe + OS installer
 ```
 
 ### Pre-1.0 (0.x)
@@ -203,9 +213,129 @@ Once v0.13 and core workflows are solid, document the full flow.
 
 ### Post-1.0 (1.x)
 
-#### v1.1+ — TBD
+#### v1.1 — Background daemon
 
-Assign remaining IDEA Matrix items in 1.x — e.g. I07 (`paper_id_map` auto-gen), CSV connector (I02 remainder), I14 (Zotero write-back), claim-level embeddings.
+Single long-lived process for Zotero polling, optional folder watch, HTTP MCP, and a settings web UI. Separated as `src/litgraph/daemon/` (independent from core graph/extract). Use with HTTP MCP (`http://127.0.0.1:8766/mcp`) instead of stdio `serve-mcp` to avoid Kuzu lock conflicts (especially on Windows).
+
+**Shipped**
+
+- [x] `litgraph daemon` — FastAPI server on `127.0.0.1:8766` with settings page (`/`) and MCP mount (`/mcp`)
+- [x] Zotero incremental sync — `ingested_versions` in sync state; `changed_only` skips unchanged items
+- [x] Ingest queue — serializes ingest / build; `finder.reload()` after build
+- [x] `extract_mode: auto | manual` — manual mode queues pending extract; `POST /api/daemon/extract`
+- [x] Daemon settings API — `GET/PUT /api/daemon/settings`, `GET /api/daemon/status`, `POST /api/daemon/sync`
+- [x] `daemon-http` MCP transport in setup wizard
+- [x] Folder watch integration via `WatchOptions.write_guard` (optional `watch_folder` in config)
+- [x] Tests — `tests/test_daemon.py`
+
+**Polish (remaining)**
+
+- [ ] MCP fallback during ingest/build — `503 syncing` or `cache/graph.json` snapshot (Kuzu single-writer)
+- [ ] `litgraph setup` — first-run daemon start guide and HTTP MCP as default on Windows
+- [ ] Zotero backoff / failure visibility in status API
+
+#### v1.x — v2 prerequisites
+
+Packaging groundwork before v2.0. Does not block IDEA items (I07, I14, CSV, etc.) in parallel.
+
+| Item | Description |
+|---|---|
+| **I16 packaging spike** | PyInstaller proof-of-concept on Windows — bundle `litgraph daemon`, Kuzu + PyMuPDF native libs |
+| **Frozen paths** | `sys._MEIPASS` support for static HTML, config resolution, default `.litgraph` paths |
+| **Default project bootstrap** | First-run papers folder + `litgraph init` equivalent from settings UI |
+| **Supervisor design** | `litgraph-tray` — PySide6 `QSystemTrayIcon`, subprocess control of frozen `litgraph-daemon.exe`, `webbrowser.open` for settings |
+| **Release infra** | `scripts/package/` — version script, `dist/` layout, CI matrix (Windows / macOS / Linux) |
+
+#### v1.2+ — Feature minors (TBD)
+
+Assign remaining IDEA Matrix items — e.g. I07 (`paper_id_map` auto-gen), CSV connector (I02 remainder), I14 (Zotero write-back), claim-level embeddings.
+
+### 2.0 — End-user distribution
+
+**Goal:** Ship a self-contained install that does not require a pre-installed Python interpreter. User flow: download installer → install → system-tray app starts `litgraph daemon` → configure via browser at `http://127.0.0.1:8766/`.
+
+#### Runtime architecture
+
+```text
+litgraph-tray (PySide6, frozen exe)
+  ├─ spawns / supervises → litgraph-daemon.exe (PyInstaller one-folder or one-file)
+  │     ├─ FastAPI + uvicorn  @ 127.0.0.1:8766
+  │     ├─ GET  /              settings UI (bundled settings.html)
+  │     ├─ *    /mcp           Streamable HTTP MCP (mcp.server.streamable_http)
+  │     ├─ ZoteroScheduler     httpx → Zotero Web API, incremental ingested_versions
+  │     ├─ IngestQueue         threading queue → parse / extract / build (Kuzu write)
+  │     └─ optional watchdog   papers_dir folder watch
+  ├─ system tray menu          start / stop / restart daemon, open settings URL
+  └─ logon autostart           Windows: Startup folder or Task Scheduler entry created by installer
+                               macOS: LaunchAgent plist
+                               Linux: XDG autostart .desktop
+```
+
+#### Technology stack
+
+| Layer | Technology | Notes |
+|---|---|---|
+| Daemon server | FastAPI, uvicorn, `litgraph.daemon.server` | Already implemented; bind `127.0.0.1` only |
+| MCP transport | `mcp` SDK, Streamable HTTP | Mounted at `/mcp`; Cursor connects via `url` in mcp.json |
+| Graph DB | Kuzu (embedded, `pip` dep) | Native `.dll` / `.so` must ship inside PyInstaller bundle |
+| PDF parse | PyMuPDF (`fitz`) | Native lib; test in PyInstaller spike |
+| Settings UI | Static HTML + `fetch` | `src/litgraph/daemon/static/settings.html`; no build step |
+| Binary freeze | **PyInstaller** (`*.spec`) | Separate specs for `litgraph-daemon` and `litgraph-tray`; `COLLECT` one-folder layout preferred for Kuzu |
+| Tray supervisor | **PySide6** (`QSystemTrayIcon`) | Small wrapper exe; alternative: Tauri 2 shell calling bundled daemon (evaluate in v1.x spike) |
+| Windows installer | **Inno Setup** (`.iss`) | Bundles `dist/literaturegraph/` tree; optional logon task; uninstaller keeps `~/.litgraph` |
+| macOS package | **create-dmg** or `hdiutil` | Signed `.app` inside `.dmg`; notarization via `notarytool` |
+| Linux package | **dpkg-deb** + **AppImage** | `.deb` for apt; AppImage for distro-agnostic |
+| Release CI | GitHub Actions | Matrix build per OS; artifacts uploaded on `v*` tag |
+| Package index | **WinGet** (`winget-releaser` action) | Manifest points at GitHub Release `.exe` |
+| Secrets / keys | `~/.litgraph/.env` | `python-dotenv`; first-run wizard writes `OPENAI_API_KEY`, `ZOTERO_API_KEY` |
+| Code signing | Authenticode (Windows), codesign + notarize (macOS) | Required for SmartScreen / Gatekeeper; target v2.0 or v2.1 |
+
+#### v1.x packaging spike (gate before v2.0)
+
+- [ ] `literaturegraph-daemon.spec` — entry `litgraph.cli.main:app` subcommand `daemon`; `--collect-all kuzu`; hiddenimports for `uvicorn`, `fastapi`, `mcp`
+- [ ] Verify Kuzu read/write and PyMuPDF parse on frozen Windows exe
+- [ ] `sys._MEIPASS` path helpers for `daemon/static/`, `viz/static/`
+- [ ] Measure one-folder bundle size; document minimum disk / RAM
+
+**Phase A — PyInstaller bundle**
+
+- [ ] `literaturegraph-daemon` — daemon + CLI (`litgraph` typer app) as frozen executables
+- [ ] Data files in spec — `datas=[('src/litgraph/daemon/static', 'litgraph/daemon/static'), ...]`
+- [ ] Runtime hook — set `LITGRAPH_PROJECT_ROOT` or prompt on first launch if no `.litgraph/config.yaml`
+- [ ] Reuse `litgraph setup` / `mcp setup_wizard` logic for `~/.litgraph/.env` and Cursor mcp.json
+
+**Phase B — Tray supervisor (`litgraph-tray`)**
+
+- [ ] PySide6 `QSystemTrayIcon` + menu: Start, Stop, Restart, Open settings (`webbrowser.open('http://127.0.0.1:8766/')`)
+- [ ] `subprocess.Popen` / `terminate` for `litgraph-daemon.exe`; restart on unexpected exit (exponential backoff)
+- [ ] Detect port 8766 in use (`errno.EADDRINUSE`); surface PID / "another instance" in tray tooltip
+- [ ] Log file tail — `~/.litgraph/logs/daemon.log` (rotate via `logging.handlers.RotatingFileHandler`)
+
+**Phase C — OS installers & release pipeline**
+
+- [ ] Windows — `scripts/package/literaturegraph-setup.iss` (Inno Setup); output `literaturegraph-setup-{version}.exe`
+- [ ] macOS — `scripts/package/build_dmg.sh`; codesign + notarize in CI (`APPLE_*` secrets)
+- [ ] Linux — `scripts/package/build_deb.sh`, `scripts/package/build_appimage.sh`
+- [ ] `.github/workflows/release.yml` — tag `v2.0.0` triggers matrix build → GitHub Releases draft
+- [ ] `.github/workflows/winget.yml` — on `release: released`, publish WinGet manifest
+- [ ] Version source — `pyproject.toml` `[project].version`; propagated to Inno `#define MyAppVersion`
+
+**Phase D — First-run & uninstall**
+
+- [ ] Settings UI or tray wizard — papers folder path, `litgraph init` equivalent, Zotero API key, default `extract_mode: manual`
+- [ ] Write Cursor MCP config — `{"url": "http://127.0.0.1:8766/mcp"}` via existing `build_daemon_http_mcp_config()`
+- [ ] Inno uninstall — checkbox "Keep configuration and graph data"; remove only `{app}` binaries
+- [ ] Document coexistence rule — do not run stdio `litgraph serve-mcp` alongside daemon (Kuzu file lock)
+
+**v2.0 risks**
+
+| Risk | Mitigation |
+|---|---|
+| Kuzu native libs fail to bundle | v1.x Windows PyInstaller PoC is a hard gate; pin kuzu version in spec |
+| Large bundle size (Python + OpenAI client + kuzu) | ship without dev deps; default `extract_mode: manual` skips OpenAI at sync time |
+| Active project root ambiguous | tray + settings UI: "active project" path stored in `~/.litgraph/config.yaml` or daemon section |
+| stdio MCP lock conflicts | first-run writes HTTP MCP only; installer README warns against stdio |
+| Windows SmartScreen | Authenticode signing on `literaturegraph-setup.exe` and bundled exes |
 
 ---
 
@@ -216,6 +346,10 @@ Assign remaining IDEA Matrix items in 1.x — e.g. I07 (`paper_id_map` auto-gen)
 - Related Work draft generation or pre-clustering gaps inside LGC
 - Graphiti as a runtime dependency
 - Auth, billing, multi-tenant SaaS
+- Neo4j embedded in-process (Bolt server only; optional manual setup)
+- Team-shared graph server / multi-machine sync (future; Neo4j Server + auth)
+- Mobile / iOS
+- Zip-only distribution without system-tray supervisor or OS installer as the v2.0 completion target (full install = Inno Setup / DMG / deb + `litgraph-tray` required)
 
 ---
 
