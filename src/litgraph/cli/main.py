@@ -567,6 +567,7 @@ def import_zotero_sync(
             ctx,
             collection_key=collection,
             full_sync=full,
+            changed_only=not full,
             build=rebuild,
         )
         console.print(

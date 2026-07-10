@@ -206,3 +206,89 @@ def test_sync_zotero_with_pdfs_prints_progress(project_tmp, monkeypatch):
     assert "download PDF" in joined
     assert "Building graph" in joined
 
+
+def test_resolve_remote_ingest_source_ref_arxiv_html() -> None:
+    from litgraph.integrations.zotero import resolve_remote_ingest_source_ref
+
+    entry = {
+        "entry_type": "webpage",
+        "url": "https://arxiv.org/html/2501.13956",
+    }
+    assert resolve_remote_ingest_source_ref(entry) == "arxiv://2501.13956"
+
+
+def test_resolve_remote_ingest_source_ref_pdf_url() -> None:
+    from litgraph.integrations.zotero import resolve_remote_ingest_source_ref
+
+    entry = {
+        "entry_type": "webpage",
+        "url": "https://example.com/papers/demo.pdf",
+    }
+    assert resolve_remote_ingest_source_ref(entry) == "https://example.com/papers/demo.pdf"
+
+
+def test_resolve_remote_ingest_source_ref_unsupported_webpage() -> None:
+    from litgraph.integrations.zotero import resolve_remote_ingest_source_ref
+
+    entry = {
+        "entry_type": "webpage",
+        "url": "https://example.com/blog/post",
+    }
+    assert resolve_remote_ingest_source_ref(entry) is None
+
+
+def test_sync_zotero_with_pdfs_webpage_fallback(project_tmp, monkeypatch):
+    from litgraph.cli.config_manager import init_project, resolve_context
+    from litgraph.integrations import zotero as zmod
+
+    init_project(project_tmp, papers_dir=str(project_tmp / "papers"))
+    ctx = resolve_context(project_tmp)
+    ctx.bib_cache_dir.mkdir(parents=True, exist_ok=True)
+    (ctx.bib_cache_dir / "zotero_live.json").write_text(
+        json.dumps([
+            {
+                "bib_key": "WEB1",
+                "zotero_key": "WEB1",
+                "entry_type": "webpage",
+                "title": "Zep Paper",
+                "url": "https://arxiv.org/html/2501.13956",
+            }
+        ]),
+        encoding="utf-8",
+    )
+
+    class _Result:
+        paper_id = "p_zep"
+        source_path = ".litgraph/ingest/default/zotero_WEB1.pdf"
+        errors: list = []
+        skipped_extract = False
+
+    class _Ctx:
+        def ingest_from_bytes(self, *a, **k):
+            return _Result()
+
+    monkeypatch.setattr(zmod, "_resolve_zotero_credentials", lambda **k: ("1", "key"))
+    monkeypatch.setattr(
+        zmod,
+        "sync_zotero_library",
+        lambda *a, **k: {"synced": 1, "last_version": 1},
+    )
+    monkeypatch.setattr(zmod, "fetch_pdf_for_item", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "litgraph.ingest.registry.resolve_ingest_payload",
+        lambda ref: type("Payload", (), {"data": b"%PDF-1.4 zep", "filename": "2501.13956.pdf"})(),
+    )
+    monkeypatch.setattr("litgraph.context.LitgraphContext", lambda **k: _Ctx())
+    monkeypatch.setattr(
+        "litgraph.ingest.dedup.register_paper_identity",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "litgraph.cli.helpers.build_paper_graph",
+        lambda *a, **k: {"papers_indexed": 1, "nodes": 1, "edges": 0},
+    )
+
+    result = zmod.sync_zotero_with_pdfs(ctx, build=True, show_progress=False)
+    assert result["pdfs_ingested"] == 1
+    assert result["pdfs_skipped"] == 0
+
