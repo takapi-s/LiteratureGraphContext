@@ -76,61 +76,23 @@ class MCPServer:
 
 
 async def _run_http_server(service: MCPToolService, *, host: str, port: int) -> None:
-    import contextlib
+    from contextlib import asynccontextmanager
 
     import uvicorn
-    from contextlib import asynccontextmanager
-    from fastapi import FastAPI, Request
-    from mcp.server import Server
-    from mcp.server.models import InitializationOptions
-    from mcp.server.streamable_http import StreamableHTTPServerTransport
-    from mcp.types import ServerCapabilities, TextContent, Tool, ToolsCapability
+    from fastapi import FastAPI
 
-    transport = StreamableHTTPServerTransport(mcp_session_id=None, is_json_response_enabled=True)
-    mcp_server = Server("literature-graph-context")
+    from litgraph.mcp.http_mount import mcp_http_lifespan, register_mcp_http_route
 
-    @mcp_server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
-            Tool(name=t["name"], description=t["description"], inputSchema=t["inputSchema"])
-            for t in service.tools
-        ]
-
-    @mcp_server.call_tool()
-    async def call_tool(name: str, arguments: dict | None) -> list[TextContent]:
-        args = arguments or {}
-        result = service.handle_tool_call(name, args)
-        text = service.format_tool_result(name, result)
-        return [TextContent(type="text", text=text)]
+    transport_holder: list = []
 
     @asynccontextmanager
-    async def lifespan(_app: FastAPI):
-        async with transport.connect() as (read_stream, write_stream):
-            run_task = asyncio.create_task(
-                mcp_server.run(
-                    read_stream,
-                    write_stream,
-                    InitializationOptions(
-                        server_name="literature-graph-context",
-                        server_version=__version__,
-                        capabilities=ServerCapabilities(tools=ToolsCapability(listChanged=False)),
-                        instructions=INSTRUCTIONS,
-                    ),
-                )
-            )
-            try:
-                yield
-            finally:
-                run_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await run_task
+    async def lifespan(_app):
+        async with mcp_http_lifespan(service) as transport:
+            transport_holder[:] = [transport]
+            yield
 
     app = FastAPI(lifespan=lifespan)
-
-    @app.api_route("/mcp", methods=["GET", "POST", "DELETE"])
-    async def mcp_endpoint(request: Request) -> None:
-        await transport.handle_request(request.scope, request.receive, request._send)
-
+    register_mcp_http_route(app, transport_holder)
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server_instance = uvicorn.Server(config)
     await server_instance.serve()
