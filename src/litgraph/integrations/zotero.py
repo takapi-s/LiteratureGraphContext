@@ -362,9 +362,18 @@ def sync_zotero_with_pdfs(
     full_sync: bool = False,
     extract: bool = True,
     build: bool = True,
+    show_progress: bool = True,
 ) -> Dict[str, Any]:
     """Sync bib metadata then ingest PDF attachments for changed items."""
+    from rich.console import Console
+
     from litgraph.context import LitgraphContext
+
+    console = Console(stderr=True)
+
+    def _log(message: str) -> None:
+        if show_progress:
+            console.print(message)
 
     uid, key = _resolve_zotero_credentials(config=ctx.config)
     # Prefer the active workspace bib dir; fall back to legacy .litgraph/cache/bib
@@ -374,12 +383,18 @@ def sync_zotero_with_pdfs(
     if not (bib_dir / "zotero_live.json").exists() and (legacy_bib / "zotero_live.json").exists():
         bib_dir = legacy_bib
 
+    _log("[cyan]Fetching Zotero library metadata…[/cyan]")
     bib_result = sync_zotero_library(
         bib_dir,
         user_id=uid,
         api_key=key,
         collection_key=collection_key,
         full_sync=full_sync,
+    )
+    _log(
+        f"[green]Bib sync[/green]: {bib_result.get('synced', 0)} entr"
+        f"{'y' if bib_result.get('synced') == 1 else 'ies'} "
+        f"(version {bib_result.get('last_version', '?')})"
     )
     # Keep workspace bib cache in sync when we had to read/write legacy path.
     if bib_dir != ctx.bib_cache_dir:
@@ -390,6 +405,15 @@ def sync_zotero_with_pdfs(
                 (ctx.bib_cache_dir / name).write_bytes(src.read_bytes())
 
     entries = _load_cached_zotero_entries(ctx.bib_cache_dir)
+    work_entries = [
+        e for e in entries if str(e.get("zotero_key") or e.get("bib_key") or "").strip()
+    ]
+    total = len(work_entries)
+    _log(
+        f"[cyan]Ingesting PDFs[/cyan]: {total} item(s)"
+        + (" (LLM extract enabled — this can take several minutes)" if extract else "")
+    )
+
     lctx = LitgraphContext(
         project_root=ctx.project_root,
         workspace_id=ctx.workspace_id,
@@ -398,22 +422,31 @@ def sync_zotero_with_pdfs(
     ingested = 0
     skipped = 0
     errors: List[str] = []
-    for entry in entries:
+    for index, entry in enumerate(work_entries, start=1):
         zkey = str(entry.get("zotero_key") or entry.get("bib_key") or "")
-        if not zkey:
-            continue
+        title = str(entry.get("title") or zkey).strip()
+        label = title if len(title) <= 64 else title[:61] + "…"
         source_ref = f"zotero://{uid}/{zkey}"
+        _log(f"  [{index}/{total}] {label}")
         try:
+            _log("    ↓ download PDF")
             pdf = fetch_pdf_for_item(uid, key, zkey)
             if not pdf:
                 skipped += 1
+                _log("    [yellow]skip[/yellow] (no PDF attachment)")
                 continue
+            _log(
+                "    → parse"
+                + (" + extract" if extract else "")
+                + f" ({len(pdf) // 1024} KB)"
+            )
             result = lctx.ingest_from_bytes(
                 pdf,
                 filename=f"zotero_{zkey}.pdf",
                 source_ref=source_ref,
                 extract=extract,
                 build=False,
+                show_progress=show_progress,
             )
             if entry.get("doi"):
                 from litgraph.ingest.dedup import register_paper_identity
@@ -428,13 +461,28 @@ def sync_zotero_with_pdfs(
                     zotero_key=zkey,
                     doi=str(entry.get("doi") or ""),
                 )
+            if result.errors:
+                for err in result.errors:
+                    errors.append(f"{zkey}: {err}")
+                _log(f"    [yellow]partial[/yellow] {result.paper_id}")
+            elif result.skipped_extract:
+                _log(f"    [dim]ok (extract cached)[/dim] {result.paper_id}")
+            else:
+                _log(f"    [green]ok[/green] {result.paper_id}")
             ingested += 1
         except Exception as exc:
             errors.append(f"{zkey}: {exc}")
+            _log(f"    [red]failed[/red] {exc}")
     if build and ingested:
+        _log("[cyan]Building graph…[/cyan]")
         from litgraph.cli.helpers import build_paper_graph
 
-        build_paper_graph(ctx)
+        build_result = build_paper_graph(ctx)
+        _log(
+            f"[green]Graph ready[/green]: "
+            f"{build_result.get('papers_indexed', 0)} paper(s), "
+            f"nodes={build_result.get('nodes', 0)}, edges={build_result.get('edges', 0)}"
+        )
     return {
         **bib_result,
         "pdfs_ingested": ingested,

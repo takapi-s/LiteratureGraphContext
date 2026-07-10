@@ -169,6 +169,7 @@ class LitgraphContext:
         skip_confirm: bool = True,
         provider: Optional[str] = None,
         model: Optional[str] = None,
+        show_progress: bool = False,
     ) -> IngestResult:
         ref = source_ref or f"bytes://{filename}"
         payload = resolve_ingest_payload(ref, data=data, filename=filename)
@@ -183,6 +184,7 @@ class LitgraphContext:
             provider=provider,
             model=model,
             content_hash=hashlib.sha256(payload.data).hexdigest(),
+            show_progress=show_progress,
         )
 
     def ingest_from_source_ref(
@@ -194,6 +196,7 @@ class LitgraphContext:
         skip_confirm: bool = True,
         provider: Optional[str] = None,
         model: Optional[str] = None,
+        show_progress: bool = False,
     ) -> IngestResult:
         payload = resolve_ingest_payload(source_ref)
         dest = self._ingest_dir() / payload.filename
@@ -207,6 +210,7 @@ class LitgraphContext:
             provider=provider,
             model=model,
             content_hash=hashlib.sha256(payload.data).hexdigest(),
+            show_progress=show_progress,
         )
 
     def _ingest_file(
@@ -220,6 +224,7 @@ class LitgraphContext:
         provider: Optional[str],
         model: Optional[str],
         content_hash: str = "",
+        show_progress: bool = False,
     ) -> IngestResult:
         rel = self._rel_path(file_path)
         if not content_hash:
@@ -279,7 +284,7 @@ class LitgraphContext:
                 skip_confirm=skip_confirm,
                 provider=provider,
                 model=model,
-                show_progress=False,
+                show_progress=show_progress,
             )
             if extract_result.get("cancelled"):
                 result.cancelled = True

@@ -142,3 +142,67 @@ def test_resolve_credentials_key_only(monkeypatch):
     uid, key = zmod._resolve_zotero_credentials()
     assert uid == "111"
     assert key == "secret-key"
+
+
+def test_sync_zotero_with_pdfs_prints_progress(project_tmp, monkeypatch):
+    from litgraph.cli.config_manager import init_project, resolve_context
+    from litgraph.integrations import zotero as zmod
+
+    init_project(project_tmp, papers_dir=str(project_tmp / "papers"))
+    ctx = resolve_context(project_tmp)
+    ctx.bib_cache_dir.mkdir(parents=True, exist_ok=True)
+    (ctx.bib_cache_dir / "zotero_live.json").write_text(
+        json.dumps([
+            {
+                "bib_key": "ABC",
+                "zotero_key": "ABC",
+                "title": "Progress Visible Paper",
+                "doi": "10.1/test",
+            }
+        ]),
+        encoding="utf-8",
+    )
+
+    logs: list[str] = []
+
+    class _FakeConsole:
+        def print(self, message: str) -> None:
+            logs.append(str(message))
+
+    class _Result:
+        paper_id = "p_test"
+        source_path = ".litgraph/ingest/default/zotero_ABC.pdf"
+        errors: list = []
+        skipped_extract = False
+
+    class _Ctx:
+        def ingest_from_bytes(self, *a, **k):
+            assert k.get("show_progress") is True
+            return _Result()
+
+    monkeypatch.setattr(zmod, "_resolve_zotero_credentials", lambda **k: ("1", "key"))
+    monkeypatch.setattr(
+        zmod,
+        "sync_zotero_library",
+        lambda *a, **k: {"synced": 1, "last_version": 1},
+    )
+    monkeypatch.setattr(zmod, "fetch_pdf_for_item", lambda *a, **k: b"%PDF-1.4 fake")
+    monkeypatch.setattr("rich.console.Console", lambda **k: _FakeConsole())
+    monkeypatch.setattr("litgraph.context.LitgraphContext", lambda **k: _Ctx())
+    monkeypatch.setattr(
+        "litgraph.ingest.dedup.register_paper_identity",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "litgraph.cli.helpers.build_paper_graph",
+        lambda *a, **k: {"papers_indexed": 1, "nodes": 1, "edges": 0},
+    )
+
+    result = zmod.sync_zotero_with_pdfs(ctx, build=True, show_progress=True)
+    assert result["pdfs_ingested"] == 1
+    joined = "\n".join(logs)
+    assert "Fetching Zotero library" in joined
+    assert "[1/1]" in joined
+    assert "download PDF" in joined
+    assert "Building graph" in joined
+
