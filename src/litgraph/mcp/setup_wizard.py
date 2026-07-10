@@ -58,9 +58,19 @@ def build_mcp_client_config(project_root: Path) -> dict:
     }
 
 
-def _merge_mcp_config(target: Path, project_root: Path) -> Path:
-    """Write or merge the litgraph server entry into an MCP config JSON file."""
-    entry = build_mcp_client_config(project_root)["mcpServers"][_SERVER_NAME]
+def build_daemon_http_mcp_config(project_root: Path, port: int = 8766) -> dict:
+    """Build MCP config pointing at a running ``litgraph daemon`` HTTP endpoint."""
+    _ = project_root  # reserved for future per-project daemon routing
+    return {
+        "mcpServers": {
+            _SERVER_NAME: {
+                "url": f"http://127.0.0.1:{port}/mcp",
+            }
+        }
+    }
+
+
+def _merge_mcp_entry(target: Path, entry: dict) -> Path:
     existing: dict = {}
     if target.exists():
         try:
@@ -74,6 +84,12 @@ def _merge_mcp_config(target: Path, project_root: Path) -> Path:
         json.dump(existing, f, indent=2)
         f.write("\n")
     return target
+
+
+def _merge_mcp_config(target: Path, project_root: Path) -> Path:
+    """Write or merge the litgraph server entry into an MCP config JSON file."""
+    entry = build_mcp_client_config(project_root)["mcpServers"][_SERVER_NAME]
+    return _merge_mcp_entry(target, entry)
 
 
 def configure_mcp_client(project_root: Path | None = None) -> Path:
@@ -263,6 +279,31 @@ def _configure_client(root: Path) -> Optional[Path]:
         target = _claude_desktop_config_path()
     else:
         target = root / "mcp.json"
+
+    transport = Prompt.ask(
+        "MCP transport",
+        choices=["stdio", "daemon-http"],
+        default="daemon-http",
+    )
+    if transport == "daemon-http":
+        port_raw = Prompt.ask("Daemon HTTP port", default="8766").strip() or "8766"
+        try:
+            port = int(port_raw)
+        except ValueError:
+            port = 8766
+        entry = build_daemon_http_mcp_config(root, port=port)["mcpServers"][_SERVER_NAME]
+        out = _merge_mcp_entry(target, entry)
+        console.print(f"[green]Wrote[/green] {out}")
+        console.print(
+            "[dim]Start the daemon in another terminal:[/dim] litgraph daemon "
+            f"--port {port}"
+        )
+        console.print(
+            "[dim]Do not run stdio serve-mcp at the same time; use only the daemon "
+            "HTTP endpoint to avoid Kuzu lock conflicts.[/dim]"
+        )
+        return out
+
     out = _merge_mcp_config(target, root)
     console.print(f"[green]Wrote[/green] {out}")
     return out
@@ -340,6 +381,13 @@ def _final_hints(root: Path, mcp_out: Optional[Path]) -> None:
         console.print("\n[dim]When ready:[/dim] litgraph index")
     else:
         console.print("\n[dim]Verify MCP tools with:[/dim] litgraph test-mcp")
+    console.print(
+        "\n[dim]For Zotero auto-sync + settings UI, run:[/dim] litgraph daemon"
+    )
+    console.print(
+        "[dim]Windows autostart: register `litgraph daemon` in Task Scheduler "
+        "(At log on).[/dim]"
+    )
     if mcp_out is not None:
         console.print("[dim]Restart your MCP client to pick up the new configuration.[/dim]")
 
