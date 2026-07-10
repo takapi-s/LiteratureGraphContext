@@ -72,6 +72,9 @@ def init_cmd(
     papers = str(papers_dir) if papers_dir else None
     litgraph_dir = config_manager.init_project(root, papers_dir=papers)
     console.print(f"[green]Initialized[/green] {litgraph_dir}")
+    console.print("\n[dim]Next:[/dim]")
+    console.print("  litgraph setup     # interactive: LLM, keys, MCP, optional first index")
+    console.print("  litgraph index     # scan → parse → extract → build")
 
 
 _LEGACY_PROJECT_ARTIFACTS = (
@@ -145,7 +148,7 @@ def doctor_cmd() -> None:
         )
         console.print("  cd /path/to/your/repo")
         console.print("  litgraph init --papers-dir ./papers")
-        console.print("  litgraph scan ./papers && litgraph parse && litgraph extract -y && litgraph build")
+        console.print("  litgraph index -y")
         console.print(
             "\n[dim]If you had graph data only under ~/.litgraph, copy artifacts manually "
             "after verifying papers_dir paths, then remove legacy project files "
@@ -156,7 +159,7 @@ def doctor_cmd() -> None:
 
     if ctx is None and not legacy:
         console.print(
-            "\n[dim]Run litgraph init --papers-dir ./papers in your repository to get started.[/dim]"
+            "\n[dim]Run litgraph setup (or litgraph init --papers-dir ./papers) to get started.[/dim]"
         )
 
 
@@ -255,6 +258,77 @@ def build_cmd(
         f"nodes={result.get('nodes', 0)}, edges={result.get('edges', 0)}, "
         f"cites_from_references={result.get('cites_from_references', 0)}."
     )
+
+
+@app.command("index")
+def index_cmd(
+    papers_path: Optional[Path] = typer.Argument(None, help="Papers directory (optional)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip external API confirmation"),
+    no_extract: bool = typer.Option(False, "--no-extract", help="Skip LLM extract (scan → parse → build)"),
+    force: bool = typer.Option(False, "--force", help="Re-extract papers that already have cache"),
+    all_files: bool = typer.Option(False, "--all", help="Parse all files, not only changed"),
+    provider: Optional[str] = typer.Option(None, "--provider", help="LLM provider override"),
+    model: Optional[str] = typer.Option(None, "--model", help="LLM model override"),
+    enrich_s2: bool = typer.Option(False, "--enrich-s2", help="Enrich metadata via Semantic Scholar"),
+) -> None:
+    """Index papers: scan → parse → extract → build in one command."""
+    ctx = _ctx()
+    result = helpers.index_papers(
+        ctx,
+        papers_path=papers_path,
+        skip_confirm=yes,
+        no_extract=no_extract,
+        force=force,
+        all_files=all_files,
+        provider=provider,
+        model=model,
+        enrich_s2=enrich_s2,
+        show_progress=True,
+    )
+    scan = result.get("scan") or {}
+    parse_result = result.get("parse") or {}
+    console.print(
+        f"Scanned {scan.get('total', 0)} file(s) ({scan.get('changed', 0)} changed); "
+        f"parsed {parse_result.get('parsed', 0)} paper(s)."
+    )
+    if result.get("cancelled"):
+        console.print("[yellow]Extraction cancelled; graph not rebuilt.[/yellow]")
+        return
+    extract_result = result.get("extract") or {}
+    if not extract_result.get("skipped_step"):
+        skipped = extract_result.get("skipped", 0)
+        if skipped:
+            console.print(
+                f"Extracted {extract_result.get('extracted', 0)} paper(s), "
+                f"skipped {skipped} already up to date."
+            )
+        else:
+            console.print(f"Extracted {extract_result.get('extracted', 0)} paper(s).")
+        failed = extract_result.get("failed") or []
+        if failed:
+            console.print(f"[red]Failed to extract {len(failed)} paper(s).[/red]")
+    built = result.get("build") or {}
+    console.print(
+        f"[green]Indexed[/green] {built.get('papers_indexed', 0)} paper(s): "
+        f"nodes={built.get('nodes', 0)}, edges={built.get('edges', 0)}."
+    )
+
+
+@app.command("setup")
+def setup_cmd(
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project root"),
+    papers_dir: Optional[Path] = typer.Option(None, "--papers-dir", help="Papers directory (non-interactive with --yes)"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Non-interactive: init if needed and write mcp.json in the project root",
+    ),
+) -> None:
+    """Interactive onboarding: project, LLM, keys, optional Zotero/MCP/first index."""
+    out = run_setup_wizard(path.resolve(), yes=yes, papers_dir=papers_dir)
+    if yes and out is not None:
+        console.print(f"[green]Wrote[/green] {out}")
 
 
 @app.command("rebuild")
@@ -656,9 +730,9 @@ def mcp_setup(
         False, "--yes", "-y", help="Non-interactive: write mcp.json in the project root"
     ),
 ) -> None:
-    """Interactive MCP onboarding (project, LLM, API key, client config)."""
+    """Interactive MCP onboarding (alias of `litgraph setup`)."""
     out = run_setup_wizard(path.resolve(), yes=yes)
-    if yes:
+    if yes and out is not None:
         console.print(f"[green]Wrote[/green] {out}")
 
 

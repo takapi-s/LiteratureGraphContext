@@ -1,4 +1,4 @@
-"""MCP client setup wizard."""
+"""Interactive onboarding wizard (project, LLM, keys, Zotero, MCP, first index)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Optional
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
-from litgraph.cli import config_manager
+from litgraph.cli import config_manager, helpers
 
 console = Console(stderr=True)
 
@@ -91,17 +91,20 @@ def _claude_desktop_config_path() -> Path:
     return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
 
 
-def _ensure_project(root: Path) -> Path:
+def _ensure_project(root: Path, papers_dir: Optional[Path] = None) -> Path:
     """Return the .litgraph dir, initializing the project interactively if needed."""
     litgraph_dir = root / config_manager.PROJECT_DIR_NAME
     if (litgraph_dir / "config.yaml").is_file():
         console.print(f"[green]Project found:[/green] {litgraph_dir}")
         return litgraph_dir
     console.print(f"[yellow]No .litgraph project in {root}.[/yellow]")
-    papers_dir = Prompt.ask("Papers directory", default="./papers")
-    papers_path = Path(papers_dir)
-    if not papers_path.is_absolute():
-        papers_path = root / papers_path
+    if papers_dir is not None:
+        papers_path = papers_dir if papers_dir.is_absolute() else root / papers_dir
+    else:
+        papers_raw = Prompt.ask("Papers directory", default="./papers")
+        papers_path = Path(papers_raw)
+        if not papers_path.is_absolute():
+            papers_path = root / papers_path
     papers_path.mkdir(parents=True, exist_ok=True)
     litgraph_dir = config_manager.init_project(root, papers_dir=str(papers_path))
     console.print(f"[green]Initialized[/green] {litgraph_dir}")
@@ -131,9 +134,24 @@ def _configure_llm(litgraph_dir: Path, root: Path) -> str:
 def _append_env_line(env_file: Path, key: str, value: str) -> None:
     env_file.parent.mkdir(parents=True, exist_ok=True)
     existing = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
-    if existing and not existing.endswith("\n"):
-        existing += "\n"
-    env_file.write_text(existing + f"{key}={value}\n", encoding="utf-8")
+    lines = existing.splitlines() if existing else []
+    updated = False
+    new_lines: list[str] = []
+    for line in lines:
+        if line.startswith(f"{key}=") and not line.strip().startswith("#"):
+            new_lines.append(f"{key}={value}")
+            updated = True
+        else:
+            new_lines.append(line)
+    if not updated:
+        if new_lines and new_lines[-1] != "":
+            new_lines.append(f"{key}={value}")
+        else:
+            new_lines.append(f"{key}={value}")
+    text = "\n".join(new_lines)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    env_file.write_text(text, encoding="utf-8")
 
 
 def _configure_api_key(provider: str) -> None:
@@ -152,17 +170,93 @@ def _configure_api_key(provider: str) -> None:
     value = Prompt.ask(env_key, password=True)
     if value.strip():
         _append_env_line(config_manager.GLOBAL_ENV_FILE, env_key, value.strip())
+        os.environ[env_key] = value.strip()
         console.print(f"[green]Saved[/green] {env_key} to {config_manager.GLOBAL_ENV_FILE}")
     else:
         console.print("[dim]Empty input; skipped.[/dim]")
 
 
-def _configure_client(root: Path) -> Path:
+def _configure_zotero() -> bool:
+    """Optionally collect Zotero API key; user ID is resolved automatically."""
+    from litgraph.integrations.zotero import (
+        _is_numeric_user_id,
+        resolve_user_id_from_api_key,
+    )
+
+    config_manager.load_env()
+    existing_key = (os.getenv("ZOTERO_API_KEY") or "").strip()
+    existing_uid = (os.getenv("ZOTERO_USER_ID") or "").strip()
+    if existing_key and _is_numeric_user_id(existing_uid):
+        console.print("[green]Zotero credentials already set.[/green]")
+        return Confirm.ask("Use Zotero as a paper source?", default=False)
+
+    if existing_key and existing_uid and not _is_numeric_user_id(existing_uid):
+        console.print(
+            f"[yellow]ZOTERO_USER_ID={existing_uid!r} looks like a username, "
+            "not the numeric API user ID. Resolving from API key…[/yellow]"
+        )
+        try:
+            uid = resolve_user_id_from_api_key(existing_key)
+        except Exception as exc:
+            console.print(f"[red]Could not resolve user ID:[/red] {exc}")
+            if not Confirm.ask("Enter a new Zotero API key?", default=True):
+                return False
+            existing_key = ""
+        else:
+            _append_env_line(config_manager.GLOBAL_ENV_FILE, "ZOTERO_USER_ID", uid)
+            os.environ["ZOTERO_USER_ID"] = uid
+            console.print(f"[green]Resolved[/green] ZOTERO_USER_ID={uid}")
+            return Confirm.ask("Use Zotero as a paper source?", default=True)
+
+    if existing_key and not existing_uid:
+        try:
+            uid = resolve_user_id_from_api_key(existing_key)
+        except Exception as exc:
+            console.print(f"[red]Could not resolve user ID from existing key:[/red] {exc}")
+            existing_key = ""
+        else:
+            _append_env_line(config_manager.GLOBAL_ENV_FILE, "ZOTERO_USER_ID", uid)
+            os.environ["ZOTERO_USER_ID"] = uid
+            console.print(f"[green]Resolved[/green] ZOTERO_USER_ID={uid} from existing API key")
+            return Confirm.ask("Use Zotero as a paper source?", default=True)
+
+    if not Confirm.ask("Configure Zotero sync?", default=False):
+        return False
+
+    console.print(
+        "[dim]Create a private key at https://www.zotero.org/settings/keys "
+        f"(library read access). Stored in {config_manager.GLOBAL_ENV_FILE}. "
+        "User ID is resolved automatically — do not enter your username.[/dim]"
+    )
+    api_key = Prompt.ask("ZOTERO_API_KEY", password=True).strip()
+    if not api_key:
+        console.print("[dim]Empty key; skipped Zotero.[/dim]")
+        return False
+    try:
+        uid = resolve_user_id_from_api_key(api_key)
+    except Exception as exc:
+        console.print(f"[red]Zotero key validation failed:[/red] {exc}")
+        return False
+    _append_env_line(config_manager.GLOBAL_ENV_FILE, "ZOTERO_API_KEY", api_key)
+    _append_env_line(config_manager.GLOBAL_ENV_FILE, "ZOTERO_USER_ID", uid)
+    os.environ["ZOTERO_API_KEY"] = api_key
+    os.environ["ZOTERO_USER_ID"] = uid
+    console.print(
+        f"[green]Saved[/green] Zotero API key and user ID {uid} "
+        f"to {config_manager.GLOBAL_ENV_FILE}"
+    )
+    return True
+
+
+def _configure_client(root: Path) -> Optional[Path]:
     target_choice = Prompt.ask(
         "MCP client",
-        choices=["cursor", "claude-desktop", "generic"],
+        choices=["cursor", "claude-desktop", "generic", "skip"],
         default="cursor",
     )
+    if target_choice == "skip":
+        console.print("[dim]Skipped MCP client config.[/dim]")
+        return None
     if target_choice == "cursor":
         target = root / ".cursor" / "mcp.json"
     elif target_choice == "claude-desktop":
@@ -174,7 +268,7 @@ def _configure_client(root: Path) -> Path:
     return out
 
 
-def _final_checks(root: Path) -> None:
+def _papers_status(root: Path) -> tuple[Path, int, bool]:
     litgraph_dir = root / config_manager.PROJECT_DIR_NAME
     config = config_manager.load_project_config(litgraph_dir)
     papers_dir = Path(str(config.get("papers_dir", "papers")))
@@ -185,33 +279,94 @@ def _final_checks(root: Path) -> None:
     has_graph = (litgraph_dir / "graph.json").exists() or (
         db_dir.is_dir() and any(db_dir.iterdir())
     )
+    return papers_dir, pdf_count, has_graph
 
+
+def _run_first_index(root: Path, *, use_zotero: bool) -> None:
+    papers_dir, pdf_count, has_graph = _papers_status(root)
     console.print("\n[bold]Status[/bold]")
     console.print(f"  papers_dir: {papers_dir} ({pdf_count} PDF(s))")
     console.print(f"  graph:      {'ready' if has_graph else 'not built'}")
 
-    if not has_graph:
+    if use_zotero:
+        if not Confirm.ask("Sync Zotero library with PDFs now?", default=True):
+            console.print("[dim]Later: litgraph import zotero-sync --with-pdfs[/dim]")
+            return
+        ctx = config_manager.resolve_context(root)
+        from litgraph.integrations.zotero import sync_zotero_with_pdfs
+
+        try:
+            result = sync_zotero_with_pdfs(ctx, full_sync=False, build=True)
+        except Exception as exc:
+            console.print(f"[red]Zotero sync failed:[/red] {exc}")
+            console.print("[dim]Fix credentials or retry: litgraph import zotero-sync --with-pdfs[/dim]")
+            return
         console.print(
-            "\n[yellow]Graph is not built yet.[/yellow] Put PDFs in the papers "
-            "directory, then run:"
+            f"Synced {result.get('synced', 0)} bib entries; "
+            f"ingested {result.get('pdfs_ingested', 0)} PDF(s)."
         )
-        console.print("  litgraph scan && litgraph parse && litgraph extract && litgraph build")
-        console.print("  litgraph test-mcp")
+        if result.get("pdf_errors"):
+            for err in result["pdf_errors"][:5]:
+                console.print(f"[yellow]{err}[/yellow]")
+        return
+
+    if pdf_count == 0 and not has_graph:
+        console.print(
+            "\n[yellow]No PDFs found yet.[/yellow] Add files to the papers directory, then run:"
+        )
+        console.print("  litgraph index")
+        return
+
+    if not Confirm.ask("Run first index now (scan → parse → extract → build)?", default=True):
+        console.print("[dim]Later: litgraph index[/dim]")
+        return
+
+    ctx = config_manager.resolve_context(root)
+    result = helpers.index_papers(ctx, skip_confirm=False, show_progress=True)
+    if result.get("cancelled"):
+        console.print("[yellow]Extraction cancelled; graph not rebuilt.[/yellow]")
+        console.print("[dim]Later: litgraph index -y[/dim]")
+        return
+    built = result.get("build") or {}
+    console.print(
+        f"[green]Indexed[/green] {built.get('papers_indexed', 0)} paper(s): "
+        f"nodes={built.get('nodes', 0)}, edges={built.get('edges', 0)}."
+    )
+
+
+def _final_hints(root: Path, mcp_out: Optional[Path]) -> None:
+    _, _, has_graph = _papers_status(root)
+    if not has_graph:
+        console.print("\n[dim]When ready:[/dim] litgraph index")
     else:
         console.print("\n[dim]Verify MCP tools with:[/dim] litgraph test-mcp")
-    console.print("[dim]Restart your MCP client to pick up the new configuration.[/dim]")
+    if mcp_out is not None:
+        console.print("[dim]Restart your MCP client to pick up the new configuration.[/dim]")
 
 
-def run_setup_wizard(project_root: Path | None = None, yes: bool = False) -> Path:
-    """Interactive MCP onboarding: project, LLM, API key, client config, checks."""
+def run_setup_wizard(
+    project_root: Path | None = None,
+    yes: bool = False,
+    papers_dir: Optional[Path] = None,
+) -> Optional[Path]:
+    """Interactive onboarding: project, LLM, API key, Zotero, MCP, first index."""
     root = (project_root or Path.cwd()).resolve()
     if yes:
+        litgraph_dir = root / config_manager.PROJECT_DIR_NAME
+        if not (litgraph_dir / "config.yaml").is_file():
+            papers = papers_dir or Path("./papers")
+            papers_path = papers if papers.is_absolute() else root / papers
+            papers_path.mkdir(parents=True, exist_ok=True)
+            config_manager.init_project(root, papers_dir=str(papers_path))
+            console.print(f"[green]Initialized[/green] {litgraph_dir}")
         return configure_mcp_client(root)
 
-    console.print("[bold]LiteratureGraphContext MCP setup[/bold]\n")
-    litgraph_dir = _ensure_project(root)
+    console.print("[bold]LiteratureGraphContext setup[/bold]\n")
+    litgraph_dir = _ensure_project(root, papers_dir=papers_dir)
     provider = _configure_llm(litgraph_dir, root)
     _configure_api_key(provider)
+    use_zotero = _configure_zotero()
     out = _configure_client(root)
-    _final_checks(root)
+    _run_first_index(root, use_zotero=use_zotero)
+    _final_hints(root, out)
     return out

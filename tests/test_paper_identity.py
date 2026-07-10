@@ -23,6 +23,30 @@ def test_paper_slug_from_metadata_uses_doi():
     assert slug.startswith("doi_")
 
 
+def test_paper_slug_from_metadata_accepts_string_year():
+    slug = paper_slug_from_metadata(
+        "Graph WaveNet",
+        year="2019",
+        authors=["Wu, Z."],
+    )
+    assert "2019" in slug
+    assert "wu" in slug.lower()
+
+
+def test_normalize_extraction_raw_coerces_year_and_page():
+    from litgraph.extractor.llm_extractor import normalize_extraction_raw
+
+    raw = normalize_extraction_raw(
+        {
+            "year": "2019",
+            "methods": ["GWN"],
+            "claims": [{"text": "x", "evidence_text": "y", "page": "2", "section": "Intro"}],
+        }
+    )
+    assert raw["year"] == 2019
+    assert raw["claims"][0]["page"] == 2
+
+
 def test_finalize_extraction_identity_keeps_registry_id():
     parse_id = "p_abc123-def4"
     parsed = {"paper_id": parse_id, "path": "/papers/wrong_filename.pdf", "source_stem": "wrong_filename"}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -52,6 +53,25 @@ def normalize_extraction_raw(raw: Dict[str, Any]) -> Dict[str, Any]:
     for field in STRING_LIST_FIELDS:
         if field in out:
             out[field] = _normalize_string_list(out.get(field))
+    year = out.get("year")
+    if isinstance(year, str):
+        digits = re.search(r"(?:19|20)\d{2}", year)
+        out["year"] = int(digits.group(0)) if digits else None
+    for field in ("contributions", "claims", "limitations"):
+        items = out.get(field)
+        if not isinstance(items, list):
+            continue
+        fixed = []
+        for item in items:
+            if not isinstance(item, dict):
+                fixed.append(item)
+                continue
+            row = dict(item)
+            page = row.get("page")
+            if isinstance(page, str) and page.strip().isdigit():
+                row["page"] = int(page.strip())
+            fixed.append(row)
+        out[field] = fixed
     return out
 
 

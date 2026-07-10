@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 def _split_citation_keys(raw: str) -> List[str]:
@@ -67,12 +67,24 @@ def merge_citation_pairs(
 def bib_only_entries(
     bib_entries: List[Dict[str, Any]],
     indexed_paper_ids: Set[str],
+    *,
+    linked_bib_keys: Optional[Set[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Bib entries with no corresponding extracted paper."""
+    """Bib entries with no corresponding extracted paper.
+
+    ``linked_bib_keys`` should include bib_key / zotero_key values already
+    attached to extracted UUID papers (via title/DOI/registry match). Without
+    it, Zotero sync creates duplicate metadata-only nodes keyed by item key.
+    """
     linked_stems = set(indexed_paper_ids)
+    if linked_bib_keys:
+        linked_stems.update(k for k in linked_bib_keys if k)
     for entry in bib_entries:
         if entry.get("bib_key") in indexed_paper_ids:
             linked_stems.add(entry["bib_key"])
+        if entry.get("zotero_key") in indexed_paper_ids:
+            linked_stems.add(str(entry["zotero_key"]))
+            linked_stems.add(entry.get("bib_key", ""))
         if entry.get("source_stem") in indexed_paper_ids:
             linked_stems.add(entry["source_stem"])
 
@@ -80,10 +92,11 @@ def bib_only_entries(
     seen: Set[str] = set()
     for entry in bib_entries:
         bib_key = entry.get("bib_key", "")
+        zkey = str(entry.get("zotero_key") or "")
         stem = entry.get("source_stem", "")
-        if bib_key in linked_stems or stem in linked_stems:
+        if bib_key in linked_stems or zkey in linked_stems or stem in linked_stems:
             continue
-        pid = bib_key or stem
+        pid = bib_key or zkey or stem
         if not pid or pid in seen:
             continue
         seen.add(pid)

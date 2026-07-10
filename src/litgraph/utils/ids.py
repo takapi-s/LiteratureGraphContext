@@ -55,7 +55,14 @@ def paper_slug_from_metadata(
             return f"doi_{doi_slug}"[:80]
 
     author = _first_author_surname(authors) or "unknown"
-    yr = str(year) if year and year > 0 else "unknown"
+    year_int: Optional[int] = None
+    if isinstance(year, int):
+        year_int = year
+    elif isinstance(year, str):
+        digits = re.search(r"(?:19|20)\d{2}", year)
+        if digits:
+            year_int = int(digits.group(0))
+    yr = str(year_int) if year_int and year_int > 0 else "unknown"
     title_part = _slug((title or "untitled")[:80], max_len=40)
     return f"{author}_{yr}_{title_part}"[:80]
 

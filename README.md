@@ -39,13 +39,14 @@ LGC does not pre-compute narrative conclusions. It makes the graph and evidence 
 
 ```bash
 pip install -e ".[dev]"
-litgraph init --papers-dir ./my-papers
-litgraph scan ./my-papers
-litgraph parse
-litgraph extract
-litgraph build
+litgraph setup --papers-dir ./my-papers
+# or non-interactive:
+# litgraph init --papers-dir ./my-papers && litgraph index -y
 litgraph serve-mcp
 ```
+
+`litgraph setup` walks through project init, LLM / API keys (`~/.litgraph/.env`), optional Zotero, MCP client config, and a first index.  
+`litgraph index` alone runs `scan → parse → extract → build`.
 
 ## Where to put papers
 
@@ -69,7 +70,7 @@ my-papers/
 
 Relative paths are resolved from the project root. Absolute paths are also supported.
 
-After `scan`, `parse`, `extract`, and `build` use the configured `papers_dir` when no path argument is given.
+After setup, `litgraph index` (or the individual `scan` / `parse` / `extract` / `build` commands) uses the configured `papers_dir` when no path argument is given.
 
 Verify MCP tools: `litgraph test-mcp`
 
@@ -89,20 +90,22 @@ Each repository has its own project at `<repo>/.litgraph/` (config, cache, graph
 |---|---|
 | `<repo>/.litgraph/config.yaml` | Project settings (`papers_dir`, LLM, database) |
 | `<repo>/.litgraph/cache/`, `db/` | Per-project scan cache and graph |
-| `~/.litgraph/.env` | Global API keys (shared across projects) |
+| `~/.litgraph/.env` | **Preferred** place for API keys (`OPENAI_API_KEY`, `ZOTERO_*`, …) |
 | `~/.litgraph/logs/` | Global log files |
+| `<repo>/.env` | Optional local override (do not commit) |
 
-**Important:** `~/.litgraph` is for API keys and logs only—it is **not** a project. Commands like `scan`, `parse`, and `build` require an initialized project under your repository. If you see unexpected paths or split graph data, run `litgraph doctor`.
+**Important:** `~/.litgraph` is for API keys and logs only—it is **not** a project. Commands like `index` / `scan` require an initialized project under your repository. If you see unexpected paths or split graph data, run `litgraph doctor`.
 
 Project resolution order:
 
 1. `LITGRAPH_PROJECT_ROOT` (MCP / IDE)
 2. Walk up from cwd to find `<repo>/.litgraph/config.yaml` (skips `~/.litgraph`)
 
-## MCP setup (Cursor)
+## Setup & MCP (Cursor)
 
 ```bash
-litgraph mcp setup
+litgraph setup          # recommended onboarding
+# litgraph mcp setup    # alias of the same wizard
 ```
 
 ## Roadmap

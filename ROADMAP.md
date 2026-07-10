@@ -194,8 +194,9 @@ Improve parse → section → extract → build for academic PDFs. Same graph sc
 
 Once v0.13 and core workflows are solid, document the full flow.
 
-- [ ] Documentation and tutorial — init → extract → MCP → viz → Zotero; include Kuzu single-writer policy (closes the "MCP stability" limitation)
+- [ ] Documentation and tutorial — `setup` / `index` → MCP → viz → Zotero; include Kuzu single-writer policy (closes the "MCP stability" limitation)
 - [ ] Quickstart smoke test in CI — run the README command sequence so docs can't rot silently
+- [ ] Onboarding polish — `litgraph setup` + `litgraph index` shipped; keep docs aligned as workflows settle
 - [ ] Repo hygiene — remove `external/` reference clones (zotero / graphiti / CodeGraphContext; zero code references, link from docs instead); stop tracking `website/node_modules` and `dist/` tarballs
 - [ ] CI hardening — coverage reporting; PyPI publish workflow (trusted publishing)
 - [ ] PyPI release — packaging and semver-stable programmatic API

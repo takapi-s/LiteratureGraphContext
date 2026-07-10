@@ -1,4 +1,5 @@
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 from litgraph.mcp.server import MCPServer
@@ -96,3 +97,48 @@ def test_zotero_sync_mock(project_tmp):
         )
     assert result["synced"] == 1
     assert (bib_dir / "zotero_live.json").exists()
+
+
+def test_resolve_user_id_from_api_key():
+    from litgraph.integrations.zotero import resolve_user_id_from_api_key
+
+    with patch("litgraph.integrations.zotero.httpx.Client") as mock_client:
+        instance = MagicMock()
+        instance.__enter__ = MagicMock(return_value=instance)
+        instance.__exit__ = MagicMock(return_value=False)
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"userID": 98765, "key": "abc", "access": {}}
+        resp.raise_for_status = MagicMock()
+        instance.get.return_value = resp
+        mock_client.return_value = instance
+
+        assert resolve_user_id_from_api_key("test-key") == "98765"
+        instance.get.assert_called()
+        assert "/keys/current" in instance.get.call_args[0][0]
+
+
+def test_resolve_credentials_ignores_username_and_fetches_id(monkeypatch):
+    from litgraph.integrations import zotero as zmod
+
+    monkeypatch.setenv("ZOTERO_USER_ID", "takapi-s")
+    monkeypatch.setenv("ZOTERO_API_KEY", "secret-key")
+    monkeypatch.setattr(zmod, "resolve_user_id_from_api_key", lambda _key: "424242")
+    monkeypatch.setattr(zmod, "persist_zotero_user_id", lambda uid: None)
+
+    uid, key = zmod._resolve_zotero_credentials()
+    assert uid == "424242"
+    assert key == "secret-key"
+    assert os.environ["ZOTERO_USER_ID"] == "424242"
+
+
+def test_resolve_credentials_key_only(monkeypatch):
+    from litgraph.integrations import zotero as zmod
+
+    monkeypatch.delenv("ZOTERO_USER_ID", raising=False)
+    monkeypatch.setenv("ZOTERO_API_KEY", "secret-key")
+    monkeypatch.setattr(zmod, "resolve_user_id_from_api_key", lambda _key: "111")
+
+    uid, key = zmod._resolve_zotero_credentials()
+    assert uid == "111"
+    assert key == "secret-key"

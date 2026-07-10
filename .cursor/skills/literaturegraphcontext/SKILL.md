@@ -37,15 +37,15 @@ search_papers("ambiguous topic")   # always first for discovery
 ## Core workflow
 
 1. **Install**: `pip install -e ".[dev]"` (from repo) or `pip install literature-graph` when published.
-2. **Configure**: `litgraph init --papers-dir ./my-papers` (required once per repo). API keys in `.env` or `~/.litgraph/.env` (`LLM_PROVIDER`, `OPENAI_API_KEY`, etc.). Run `litgraph doctor` if project resolution looks wrong.
+2. **Setup** (preferred): `litgraph setup --papers-dir ./my-papers` — interactive project / LLM / keys / optional Zotero / MCP / first index.  
+   Or: `litgraph init --papers-dir ./my-papers` then `litgraph index -y`. API keys in `~/.litgraph/.env` (preferred) or repo `.env`. Run `litgraph doctor` if project resolution looks wrong.
 3. **Index pipeline** (run from an initialized project directory):
    ```bash
-   litgraph scan          # hash cache
-   litgraph parse         # PDF / .md / .bib → cache
-   litgraph extract -y    # LLM structured extract (needs API key; skips cached papers)
-   litgraph build         # cache → Kùzu graph
+   litgraph index -y     # scan → parse → extract → build
+   # or step-by-step:
+   litgraph scan && litgraph parse && litgraph extract -y && litgraph build
    ```
-4. **Query**: CLI (`litgraph query …`) or MCP after `litgraph mcp setup` and registering `litgraph serve-mcp`.
+4. **Query**: CLI (`litgraph query …`) or MCP after `litgraph setup` / `litgraph mcp setup` and registering `litgraph serve-mcp`.
 
 **Entity resolution (v0.7):** extract uses canonical English + `entity_catalog.json`; build merges synonyms via fuzzy match (A) and optional LLM disambiguation (B). `aliases.yaml` is no longer used. Re-index with `litgraph extract --force -y && litgraph build` after upgrading.
 
@@ -53,7 +53,7 @@ Supported inputs under `papers_dir`: `.pdf` (full pipeline), `.md` (notes), `.bi
 
 ## MCP setup (short)
 
-- Run `litgraph mcp setup` to write `mcp.json` for Cursor / Claude Desktop.
+- Run `litgraph setup` (or `litgraph mcp setup`) to write MCP config for Cursor / Claude Desktop.
 - Server entry runs `litgraph serve-mcp` with `LITGRAPH_PROJECT_ROOT` pointing at the repo.
 - CLI and MCP must share the same initialized project (same `.litgraph/`).
 - `~/.litgraph` is global config only—not a project. Do not run `litgraph scan` from `$HOME`.
@@ -75,12 +75,12 @@ Supported inputs under `papers_dir`: `.pdf` (full pipeline), `.md` (notes), `.bi
 
 ## Agent behavior
 
-- Run **scan → parse → extract → build** before deep graph queries if the user has not indexed yet.
+- Run **`litgraph index`** (or scan → parse → extract → build) before deep graph queries if the user has not indexed yet.
 - **`extract` calls an external LLM**; confirm or use `litgraph extract -y` only when appropriate. Already-extracted papers are skipped unless `--force`.
 - When answering from graph data, **cite `paper_id`, title, page, section, and `evidence_text`** when available.
 - Related work **draft prose** and **gap interpretation** are out of scope for LGC; use `compare_papers`, `find_limitations`, and `explore_paper_graph` as context for the client model.
 - `litgraph watch` defaults to scan → parse → build (no LLM); pass `--auto-extract` for full pipeline on file changes (confirmation auto-skipped). Changes queue while a batch is processing.
-- Optional: `litgraph viz` for local graph UI; `litgraph test-mcp` to smoke-test all MCP tools; `litgraph import zotero-sync` for Zotero Web API bib cache.
+- Optional: `litgraph viz` for local graph UI; `litgraph test-mcp` to smoke-test all MCP tools; `litgraph import zotero-sync --with-pdfs` for Zotero Web API + PDF ingest.
 
 ## References in this repo
 

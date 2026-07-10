@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from litgraph.cli.config_manager import ResolvedContext, get_config_value
 from litgraph.graph.citation_builder import bib_only_entries, build_citation_pairs, merge_citation_pairs
@@ -17,6 +17,35 @@ from litgraph.integrations.semantic_scholar import enrich_metadata
 from litgraph.parser.bib_linker import link_bib_to_paper
 from litgraph.parser.bib_parser import load_all_bib_entries
 from litgraph.query.embedding_store import index_paper_embeddings
+from litgraph.utils.paper_registry import load_registry
+
+
+def _registry_lookup(ctx: ResolvedContext, paper_id: str) -> Dict[str, Any]:
+    """Find registry entry for a paper_id (path, zotero_key, doi, source_ref)."""
+    registry = load_registry(ctx.litgraph_dir, ctx.workspace_id)
+    for path, entry in registry.items():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("paper_id") == paper_id:
+            return {"path": path, **entry}
+    return {}
+
+
+def _link_extraction_to_bib(
+    ctx: ResolvedContext,
+    raw: Dict[str, Any],
+    bib_entries: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    reg = _registry_lookup(ctx, str(raw.get("paper_id") or ""))
+    path = raw.get("path") or raw.get("source_path") or reg.get("path")
+    return link_bib_to_paper(
+        str(raw.get("paper_id") or ""),
+        path,
+        raw.get("title"),
+        bib_entries,
+        zotero_key=reg.get("zotero_key") or raw.get("zotero_key"),
+        doi=reg.get("doi") or raw.get("doi"),
+    )
 
 
 def _neo4j_config(ctx: ResolvedContext) -> Dict[str, Any]:
@@ -57,12 +86,7 @@ def build_graph(
         store.upsert_paper_graph(normalized)
         catalog.ingest_extraction(normalized)
         indexed_ids.add(normalized["paper_id"])
-        bib_match = link_bib_to_paper(
-            normalized["paper_id"],
-            raw.get("path"),
-            normalized.get("title"),
-            bib_entries,
-        )
+        bib_match = _link_extraction_to_bib(ctx, raw, bib_entries)
         if bib_match:
             metadata = dict(bib_match)
             if enrich_s2:
@@ -74,7 +98,16 @@ def build_graph(
     catalog.save(ctx.litgraph_dir, workspace_id=ctx.workspace_id)
 
     extraction_ids = {raw["paper_id"] for raw in extractions}
-    bib_only = bib_only_entries(bib_entries, extraction_ids)
+    linked_bib_keys: Set[str] = set()
+    for raw in extractions:
+        match = _link_extraction_to_bib(ctx, raw, bib_entries)
+        if not match:
+            continue
+        if match.get("bib_key"):
+            linked_bib_keys.add(str(match["bib_key"]))
+        if match.get("zotero_key"):
+            linked_bib_keys.add(str(match["zotero_key"]))
+    bib_only = bib_only_entries(bib_entries, extraction_ids, linked_bib_keys=linked_bib_keys)
 
     for entry in bib_only:
         pid = entry["paper_id"]
@@ -128,9 +161,7 @@ def build_graph(
         "entities_disambiguated": resolver.stats.get("disambiguated", 0),
         "entities_new": resolver.stats.get("new", 0),
         "bib_entries_linked": sum(
-            1
-            for raw in extractions
-            if link_bib_to_paper(raw["paper_id"], raw.get("path"), raw.get("title"), bib_entries)
+            1 for raw in extractions if _link_extraction_to_bib(ctx, raw, bib_entries)
         ),
         "bib_only_papers": len(bib_only),
         "cites_edges": len(all_cites_pairs),

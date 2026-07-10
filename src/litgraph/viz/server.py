@@ -27,15 +27,20 @@ def _resolve_static_dir() -> Path:
     )
 
 
-def _is_kuzu_lock_error(exc: BaseException) -> bool:
-    return "Could not set lock" in str(exc)
+def _is_kuzu_fallback_error(exc: BaseException) -> bool:
+    msg = str(exc)
+    return (
+        "Could not set lock" in msg
+        or "IO exception" in msg
+        or "Cannot read from file" in msg
+    )
 
 
 def _load_graph_json_snapshot(ctx: ResolvedContext) -> dict[str, Any]:
     graph_path = ctx.cache_dir / "graph.json"
     if not graph_path.is_file():
         raise FileNotFoundError(
-            f"Kuzu database is locked and no graph snapshot was found at {graph_path}"
+            f"Kuzu database is unavailable and no graph snapshot was found at {graph_path}"
         )
     return json.loads(graph_path.read_text(encoding="utf-8"))
 
@@ -48,7 +53,7 @@ def _graph_payload(ctx: ResolvedContext) -> dict[str, Any]:
         finally:
             store.close()
     except Exception as exc:
-        if not _is_kuzu_lock_error(exc):
+        if not _is_kuzu_fallback_error(exc):
             raise
         raw = _load_graph_json_snapshot(ctx)
     return to_playground_graph(raw)

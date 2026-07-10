@@ -707,6 +707,50 @@ def build_paper_graph(ctx: ResolvedContext, enrich_s2: bool = False) -> Dict[str
     return build_graph(ctx, extractions, enrich_s2=enrich_s2)
 
 
+def index_papers(
+    ctx: ResolvedContext,
+    *,
+    papers_path: Optional[Path] = None,
+    skip_confirm: bool = False,
+    no_extract: bool = False,
+    force: bool = False,
+    all_files: bool = False,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    enrich_s2: bool = False,
+    show_progress: bool = True,
+) -> Dict[str, Any]:
+    """Run scan → parse → (optional) extract → build as one pipeline."""
+    scan = scan_papers(ctx, papers_path, persist_dir=papers_path is not None)
+    parse_result = parse_papers(ctx, only_changed=not all_files, verbose=False)
+
+    extract_result: Dict[str, Any] = {"extracted": 0, "skipped": 0, "skipped_step": True}
+    if not no_extract:
+        extract_result = extract_papers(
+            ctx,
+            skip_confirm=skip_confirm,
+            provider=provider,
+            model=model,
+            force=force,
+            show_progress=show_progress,
+        )
+        if extract_result.get("cancelled"):
+            return {
+                "cancelled": True,
+                "scan": scan,
+                "parse": parse_result,
+                "extract": extract_result,
+            }
+
+    build_result = build_paper_graph(ctx, enrich_s2=enrich_s2)
+    return {
+        "scan": scan,
+        "parse": parse_result,
+        "extract": extract_result,
+        "build": build_result,
+    }
+
+
 def list_jobs() -> List[Dict[str, Any]]:
     return [_job_manager.job_to_dict(j) for j in _job_manager.list_jobs()]
 

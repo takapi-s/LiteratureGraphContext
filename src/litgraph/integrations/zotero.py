@@ -114,6 +114,13 @@ def fetch_library_items(
         while True:
             params["start"] = start
             resp = client.get(f"{ZOTERO_API}{path}", params=params)
+            if resp.status_code == 403:
+                raise ValueError(
+                    f"Zotero API returned 403 for {path}. "
+                    "Check that ZOTERO_USER_ID is the numeric ID (not username) "
+                    "and the API key has library read access. "
+                    "Tip: omit ZOTERO_USER_ID and LGC will resolve it from the key."
+                )
             resp.raise_for_status()
             batch = resp.json()
             if not batch:
@@ -150,7 +157,16 @@ def sync_zotero_library(
     config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Sync Zotero library via Web API into bib cache."""
+    raw_before = (
+        (user_id or os.getenv("ZOTERO_USER_ID", "") or str((config or {}).get("zotero_user_id") or ""))
+        .strip()
+    )
     uid, key = _resolve_zotero_credentials(user_id, api_key, config)
+    if not _is_numeric_user_id(raw_before) or raw_before != uid:
+        try:
+            persist_zotero_user_id(uid)
+        except OSError:
+            pass
 
     state = load_sync_state(bib_cache_dir)
     since = None if full_sync else state.get("last_version")
@@ -162,6 +178,7 @@ def sync_zotero_library(
             "total_cached": _count_cached_entries(bib_cache_dir),
             "message": "No changes since last sync",
             "last_version": since,
+            "user_id": uid,
         }
 
     if full_sync or not since:
@@ -194,6 +211,7 @@ def sync_zotero_library(
         "total_cached": len(entries),
         "last_version": max_version,
         "cache_file": str(out),
+        "user_id": uid,
     }
 
 
@@ -210,13 +228,47 @@ def _count_cached_entries(bib_cache_dir: Path) -> int:
     return len(_load_cached_zotero_entries(bib_cache_dir))
 
 
+def _is_numeric_user_id(value: str) -> bool:
+    return bool(value) and value.isdigit()
+
+
+def fetch_key_info(api_key: str) -> Dict[str, Any]:
+    """Return metadata for an API key via GET /keys/current (includes userID)."""
+    with httpx.Client(timeout=30.0, headers=_api_headers(api_key)) as client:
+        resp = client.get(f"{ZOTERO_API}/keys/current")
+        if resp.status_code == 403:
+            raise ValueError(
+                "Zotero API key was rejected (403). Create a key with library "
+                "read access at https://www.zotero.org/settings/keys"
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected response from Zotero /keys/current")
+        return data
+
+
+def resolve_user_id_from_api_key(api_key: str) -> str:
+    """Resolve numeric Zotero user ID from an API key."""
+    info = fetch_key_info(api_key)
+    uid = info.get("userID") or info.get("userId") or info.get("user_id")
+    if uid is None:
+        raise ValueError("Zotero /keys/current did not return userID")
+    uid_str = str(uid).strip()
+    if not _is_numeric_user_id(uid_str):
+        raise ValueError(f"Zotero returned a non-numeric userID: {uid_str!r}")
+    return uid_str
+
+
 def _resolve_zotero_credentials(
     user_id: Optional[str] = None,
     api_key: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
+    *,
+    auto_resolve_user_id: bool = True,
 ) -> tuple[str, str]:
     cfg = config or {}
-    uid = (
+    raw_uid = (
         user_id
         or os.getenv("ZOTERO_USER_ID", "")
         or str(cfg.get("zotero_user_id") or "")
@@ -226,9 +278,51 @@ def _resolve_zotero_credentials(
         or os.getenv("ZOTERO_API_KEY", "")
         or str(cfg.get("zotero_api_key") or "")
     ).strip()
-    if not uid or not key:
-        raise ValueError("ZOTERO_USER_ID and ZOTERO_API_KEY are required for Zotero sync")
+    if not key:
+        raise ValueError(
+            "ZOTERO_API_KEY is required for Zotero sync. "
+            "Create one at https://www.zotero.org/settings/keys"
+        )
+    uid = raw_uid if _is_numeric_user_id(raw_uid) else ""
+    resolved_from_key = False
+    if not uid and auto_resolve_user_id:
+        uid = resolve_user_id_from_api_key(key)
+        resolved_from_key = True
+    if not uid:
+        raise ValueError(
+            "ZOTERO_USER_ID is missing and could not be resolved from the API key. "
+            "It must be the numeric ID from https://www.zotero.org/settings/keys "
+            "(not your username)."
+        )
+    if resolved_from_key or (raw_uid and raw_uid != uid):
+        os.environ["ZOTERO_USER_ID"] = uid
     return uid, key
+
+
+def persist_zotero_user_id(user_id: str, env_file: Optional[Path] = None) -> Path:
+    """Write resolved numeric user ID into the global env file."""
+    from litgraph.cli.config_manager import GLOBAL_ENV_FILE, ensure_global_config_dir
+
+    target = env_file or GLOBAL_ENV_FILE
+    ensure_global_config_dir()
+    existing = target.read_text(encoding="utf-8") if target.exists() else ""
+    lines = existing.splitlines() if existing else []
+    updated = False
+    new_lines: list[str] = []
+    for line in lines:
+        if line.startswith("ZOTERO_USER_ID=") and not line.strip().startswith("#"):
+            new_lines.append(f"ZOTERO_USER_ID={user_id}")
+            updated = True
+        else:
+            new_lines.append(line)
+    if not updated:
+        new_lines.append(f"ZOTERO_USER_ID={user_id}")
+    text = "\n".join(new_lines)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    target.write_text(text, encoding="utf-8")
+    os.environ["ZOTERO_USER_ID"] = user_id
+    return target
 
 
 def fetch_item_children(user_id: str, api_key: str, item_key: str) -> List[Dict[str, Any]]:
@@ -273,13 +367,28 @@ def sync_zotero_with_pdfs(
     from litgraph.context import LitgraphContext
 
     uid, key = _resolve_zotero_credentials(config=ctx.config)
+    # Prefer the active workspace bib dir; fall back to legacy .litgraph/cache/bib
+    # when an older sync wrote there (pre-workspace path).
+    bib_dir = ctx.bib_cache_dir
+    legacy_bib = ctx.litgraph_dir / "cache" / "bib"
+    if not (bib_dir / "zotero_live.json").exists() and (legacy_bib / "zotero_live.json").exists():
+        bib_dir = legacy_bib
+
     bib_result = sync_zotero_library(
-        ctx.bib_cache_dir,
+        bib_dir,
         user_id=uid,
         api_key=key,
         collection_key=collection_key,
         full_sync=full_sync,
     )
+    # Keep workspace bib cache in sync when we had to read/write legacy path.
+    if bib_dir != ctx.bib_cache_dir:
+        ctx.bib_cache_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("zotero_live.json", SYNC_STATE_FILE):
+            src = bib_dir / name
+            if src.exists():
+                (ctx.bib_cache_dir / name).write_bytes(src.read_bytes())
+
     entries = _load_cached_zotero_entries(ctx.bib_cache_dir)
     lctx = LitgraphContext(
         project_root=ctx.project_root,

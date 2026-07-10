@@ -69,21 +69,24 @@ class LitgraphContext:
             litgraph_dir = root / ".litgraph"
             if not (litgraph_dir / "config.yaml").is_file():
                 raise ProjectNotFoundError(root)
-            config = load_project_config(litgraph_dir)
+            # Keep cache paths identical to CLI resolve_context (avoids split-brain
+            # between legacy .litgraph/cache and .litgraph/cache/{workspace}).
+            self._ctx = resolve_context(root, workspace_id=self.workspace_id)
             if config_overrides:
-                config.update(config_overrides)
-            cache_path = Path(cache_dir).resolve() if cache_dir else litgraph_dir / "cache" / self.workspace_id
-            _ensure_cache_dirs(cache_path)
-            db_path = litgraph_dir / "db" / "literature.kuzu"
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._ctx = ResolvedContext(
-                project_root=root,
-                litgraph_dir=litgraph_dir,
-                config=config,
-                db_path=db_path,
-                cache_dir=cache_path,
-                workspace_id=self.workspace_id,
-            )
+                self._ctx.config.update(config_overrides)
+            if cache_dir is not None:
+                cache_path = Path(cache_dir).resolve()
+                _ensure_cache_dirs(cache_path)
+                self._ctx = ResolvedContext(
+                    project_root=self._ctx.project_root,
+                    litgraph_dir=self._ctx.litgraph_dir,
+                    config=self._ctx.config,
+                    db_path=self._ctx.db_path,
+                    cache_dir=cache_path,
+                    workspace_id=self._ctx.workspace_id,
+                )
+            else:
+                _ensure_cache_dirs(self._ctx.cache_dir)
         else:
             self._ctx = resolve_context(workspace_id=self.workspace_id)
             if config_overrides:
