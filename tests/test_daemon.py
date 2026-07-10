@@ -74,16 +74,17 @@ def test_sync_zotero_with_pdfs_skips_unchanged_versions(project_tmp):
     )
     record_ingested_version(bib_dir, "ABC", {"zotero_version": 10})
 
-    with patch("litgraph.integrations.zotero.sync_zotero_library") as mock_bib:
-        mock_bib.return_value = {"synced": 1, "last_version": 10}
-        with patch("litgraph.integrations.zotero.fetch_pdf_for_item") as mock_pdf:
-            result = sync_zotero_with_pdfs(
-                ctx,
-                changed_only=True,
-                extract=False,
-                build=False,
-                show_progress=False,
-            )
+    with patch("litgraph.integrations.zotero._resolve_zotero_credentials", return_value=("1", "key")):
+        with patch("litgraph.integrations.zotero.sync_zotero_library") as mock_bib:
+            mock_bib.return_value = {"synced": 1, "last_version": 10}
+            with patch("litgraph.integrations.zotero.fetch_pdf_for_item") as mock_pdf:
+                result = sync_zotero_with_pdfs(
+                    ctx,
+                    changed_only=True,
+                    extract=False,
+                    build=False,
+                    show_progress=False,
+                )
 
     assert result["pdfs_version_skipped"] == 1
     assert result["pdfs_ingested"] == 0

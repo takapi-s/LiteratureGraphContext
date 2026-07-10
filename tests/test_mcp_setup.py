@@ -78,7 +78,8 @@ def test_run_setup_wizard_interactive_flow(tmp_path: Path, monkeypatch):
         "./papers",     # papers directory
         "openai",       # provider
         "gpt-4o-mini",  # model
-        "cursor",       # client
+        "cursor",       # MCP client
+        "stdio",        # MCP transport
     ])
     monkeypatch.setattr(
         setup_wizard.Prompt, "ask", staticmethod(lambda *a, **k: next(answers))
