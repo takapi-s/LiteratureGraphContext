@@ -15,6 +15,7 @@ from litgraph.ingest.registry import get_adapter, resolve_ingest_payload
 def test_normalize_arxiv_id() -> None:
     assert normalize_arxiv_id("arxiv://2401.12345") == "2401.12345"
     assert normalize_arxiv_id("https://arxiv.org/abs/2401.12345v2") == "2401.12345v2"
+    assert normalize_arxiv_id("https://arxiv.org/html/2501.13956") == "2501.13956"
 
 
 def test_local_adapter(tmp_path: Path) -> None:
