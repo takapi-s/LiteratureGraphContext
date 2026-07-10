@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import List, Optional, Set
 
 # Long-running litgraph commands that may connect to Kuzu.
-LITGRAPH_LOCK_COMMANDS: Set[str] = {"watch", "serve-mcp", "viz"}
+LITGRAPH_LOCK_COMMANDS: Set[str] = {"watch", "serve-mcp", "viz", "daemon"}
 # Only these hold a write lock; serve-mcp and viz use read-only connections.
-LITGRAPH_WRITE_LOCK_COMMANDS: Set[str] = {"watch"}
+LITGRAPH_WRITE_LOCK_COMMANDS: Set[str] = {"watch", "daemon"}
 
 
 @dataclass(frozen=True)

@@ -169,3 +169,20 @@ class MCPToolService:
     def close(self) -> None:
         if self.finder is not None:
             self.finder.close()
+
+    def reload_finder(self) -> None:
+        """Close and recreate the read-only finder after graph rebuild."""
+        if self.finder is not None:
+            self.finder.close()
+            self.finder = None
+        if self.ctx is None:
+            return
+        backend = str(get_config_value(self.ctx, "database", "LITGRAPH_DATABASE"))
+        self.finder = PaperFinder(
+            self.ctx.db_path,
+            backend=backend,
+            neo4j_config=_neo4j_config(self.ctx),
+            read_only=True,
+            project_config=self.ctx.config,
+            workspace_id=self.ctx.workspace_id,
+        )

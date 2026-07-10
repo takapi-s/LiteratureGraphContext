@@ -38,6 +38,7 @@ class WatchOptions:
     model: Optional[str] = None
     enrich_s2: bool = False
     on_result: Optional[Callable[[dict], None]] = None
+    write_guard: Optional[Callable[[Callable[[], dict]], dict]] = None
 
 
 class PapersEventHandler(FileSystemEventHandler):
@@ -126,8 +127,8 @@ class PapersEventHandler(FileSystemEventHandler):
                     self._pending_changed.clear()
                     self._pending_deleted.clear()
 
-            try:
-                result = process_watch_changes(
+            def _process() -> dict:
+                return process_watch_changes(
                     self.ctx,
                     changed_paths=changed,
                     deleted_paths=deleted,
@@ -138,6 +139,12 @@ class PapersEventHandler(FileSystemEventHandler):
                     model=self.options.model,
                     enrich_s2=self.options.enrich_s2,
                 )
+
+            try:
+                if self.options.write_guard is not None:
+                    result = self.options.write_guard(lambda: _process())
+                else:
+                    result = _process()
             except Exception:
                 from litgraph.utils.logging import get_logger
 

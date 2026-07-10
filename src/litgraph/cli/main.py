@@ -724,6 +724,26 @@ def serve_mcp(
     MCPServer().run(http=http, host=host, port=port)
 
 
+@app.command("daemon")
+def daemon_cmd(
+    host: Optional[str] = typer.Option(None, "--host", help="HTTP bind host (default from .litgraph/config.yaml)"),
+    port: Optional[int] = typer.Option(None, "--port", help="HTTP bind port (default from .litgraph/config.yaml)"),
+) -> None:
+    """Run background daemon: Zotero sync, optional folder watch, HTTP MCP, settings UI."""
+    from litgraph.daemon.runtime import DaemonRuntime
+    from litgraph.daemon.server import run_daemon_server
+
+    ctx = _ctx()
+    runtime = DaemonRuntime(ctx)
+    console.print(
+        f"[green]Starting daemon[/green] on "
+        f"http://{host or runtime.settings.http_host}:{port or runtime.settings.http_port} "
+        f"(project: {ctx.project_root})"
+    )
+    console.print("[dim]Settings UI: /  |  MCP endpoint: /mcp[/dim]")
+    run_daemon_server(runtime, host=host, port=port)
+
+
 @mcp_app.command("setup")
 def mcp_setup(
     path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project root"),
