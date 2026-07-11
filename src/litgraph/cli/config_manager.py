@@ -308,6 +308,47 @@ def get_env_bool(key: str, default: bool = False) -> bool:
     return val.strip().lower() in ("1", "true", "yes", "on")
 
 
+def upsert_env_value(env_file: Path, key: str, value: str) -> None:
+    """Create or update ``KEY=value`` in a dotenv file (preserves other lines)."""
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    existing = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
+    lines = existing.splitlines() if existing else []
+    updated = False
+    new_lines: list[str] = []
+    for line in lines:
+        if line.startswith(f"{key}=") and not line.strip().startswith("#"):
+            new_lines.append(f"{key}={value}")
+            updated = True
+        else:
+            new_lines.append(line)
+    if not updated:
+        if new_lines and new_lines[-1] != "":
+            new_lines.append(f"{key}={value}")
+        else:
+            new_lines.append(f"{key}={value}")
+    text = "\n".join(new_lines)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    env_file.write_text(text, encoding="utf-8")
+    os.environ[key] = value
+
+
+def clear_env_value(env_file: Path, key: str) -> None:
+    """Remove ``KEY=…`` lines from a dotenv file and unset the process env."""
+    if env_file.exists():
+        lines = env_file.read_text(encoding="utf-8").splitlines()
+        kept = [
+            line
+            for line in lines
+            if not (line.startswith(f"{key}=") and not line.strip().startswith("#"))
+        ]
+        text = "\n".join(kept)
+        if text and not text.endswith("\n"):
+            text += "\n"
+        env_file.write_text(text, encoding="utf-8")
+    os.environ.pop(key, None)
+
+
 def get_config_value(ctx: ResolvedContext, key: str, env_key: Optional[str] = None) -> Any:
     load_env()
     if env_key and os.getenv(env_key) is not None:

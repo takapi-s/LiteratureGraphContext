@@ -153,26 +153,8 @@ def _configure_llm(litgraph_dir: Path, root: Path) -> str:
 
 
 def _append_env_line(env_file: Path, key: str, value: str) -> None:
-    env_file.parent.mkdir(parents=True, exist_ok=True)
-    existing = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
-    lines = existing.splitlines() if existing else []
-    updated = False
-    new_lines: list[str] = []
-    for line in lines:
-        if line.startswith(f"{key}=") and not line.strip().startswith("#"):
-            new_lines.append(f"{key}={value}")
-            updated = True
-        else:
-            new_lines.append(line)
-    if not updated:
-        if new_lines and new_lines[-1] != "":
-            new_lines.append(f"{key}={value}")
-        else:
-            new_lines.append(f"{key}={value}")
-    text = "\n".join(new_lines)
-    if text and not text.endswith("\n"):
-        text += "\n"
-    env_file.write_text(text, encoding="utf-8")
+    """Write or update a dotenv key (alias of ``config_manager.upsert_env_value``)."""
+    config_manager.upsert_env_value(env_file, key, value)
 
 
 def _configure_api_key(provider: str) -> None:
