@@ -25,9 +25,14 @@ confidence on a near-black canvas — not a purple SaaS dashboard.
 | Mono | IBM Plex Mono |
 | Radius | 8–12px (buttons/inputs/panels) |
 
-## Rules
+## Brand mark
 
-- Scarce chromatic accents: blue for focus/links, green for healthy status, red for destructive only.
-- No purple brand fill, no multi-layer card shadows, no pill CTAs.
-- Hairline borders (`rgba(255,255,255,0.06–0.14)`) carry elevation instead of drop shadows.
-- Brand wordmark is hero-level on Home; nav stays secondary.
+Icon assets (document + literature graph, coral accent):
+
+| File | Use |
+|---|---|
+| `website/public/logo-icon.png` | Light surfaces / default favicon |
+| `website/public/logo-icon-dark.png` | Dark UI (daemon, viz) |
+| `docs/assets/brand/logo-icon-source-*.png` | Original art with gray canvas |
+
+Daemon topbar uses `/ui/logo-icon-dark.png`.

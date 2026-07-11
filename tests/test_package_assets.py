@@ -22,6 +22,8 @@ def test_viz_dist_is_tracked_not_website_dist() -> None:
     assert daemon_home.is_file()
     daemon_css = REPO_ROOT / "src" / "litgraph" / "daemon" / "static" / "common.css"
     assert daemon_css.is_file()
+    daemon_logo = REPO_ROOT / "src" / "litgraph" / "daemon" / "static" / "logo-icon-dark.png"
+    assert daemon_logo.is_file()
 
 
 def test_viz_assets_importable_from_package() -> None:
@@ -37,6 +39,8 @@ def test_viz_assets_importable_from_package() -> None:
     assert home.is_file()
     css = files("litgraph.daemon").joinpath("static/common.css")
     assert css.is_file()
+    logo = files("litgraph.daemon").joinpath("static/logo-icon-dark.png")
+    assert logo.is_file()
 
 
 @pytest.mark.slow
