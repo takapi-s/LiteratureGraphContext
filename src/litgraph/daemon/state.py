@@ -103,5 +103,37 @@ def list_pending_extract(ctx: ResolvedContext) -> List[str]:
     return sorted(set(pending))
 
 
+def static_dir() -> Path:
+    return Path(__file__).parent / "static"
+
+
+def home_page_path() -> Path:
+    return static_dir() / "home.html"
+
+
 def settings_page_path() -> Path:
-    return Path(__file__).parent / "static" / "settings.html"
+    return static_dir() / "settings.html"
+
+
+def common_css_path() -> Path:
+    return static_dir() / "common.css"
+
+
+_CSS_LINK = '<link rel="stylesheet" href="/ui/common.css" />'
+
+
+def render_daemon_html(page: Path) -> str:
+    """Return HTML with ``common.css`` inlined so styles apply without a second request.
+
+    The SPA catch-all and browser caches of failed ``/ui/*`` fetches have made the
+    external stylesheet unreliable in the daemon process; inlining avoids that.
+    """
+    html = page.read_text(encoding="utf-8")
+    css_file = common_css_path()
+    if not css_file.is_file():
+        return html
+    css = css_file.read_text(encoding="utf-8")
+    inline = f"<style>\n{css}\n</style>"
+    if _CSS_LINK in html:
+        return html.replace(_CSS_LINK, inline, 1)
+    return html.replace("</head>", f"{inline}\n</head>", 1)

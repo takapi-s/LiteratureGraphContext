@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LiteratureGraph Daemon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/ui/common.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <a class="brand-mark" href="/home">LiteratureGraph</a>
+        <span class="brand-sub">daemon · local hub</span>
+      </div>
+      <nav class="nav" aria-label="Primary">
+        <a class="active" href="/home">Home</a>
+        <a href="/settings">Settings</a>
+        <a href="/viz">Graph</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">Project hub</p>
+      <h1>One process.<br />Sync, extract, MCP, graph.</h1>
+      <p class="lede">
+        This daemon is the always-on hub for your literature graph.
+        Open settings, visualization, and HTTP MCP from here.
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Status</h2>
+        <p class="panel-note">Updates every 5s</p>
+      </div>
+      <div class="metrics" id="metrics"></div>
+      <details class="status-raw">
+        <summary>Raw status</summary>
+        <pre id="status"></pre>
+      </details>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Go</h2>
+      </div>
+      <div class="destinations">
+        <a class="destination" href="/settings">
+          <h3>Settings</h3>
+          <p>Extract, Zotero, folder watch, API keys, and LLM.</p>
+        </a>
+        <a class="destination" href="/viz">
+          <h3>Graph</h3>
+          <p>Explore the literature knowledge graph in the browser.</p>
+        </a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>MCP</h2>
+      </div>
+      <p class="hint">In Cursor, point daemon-http at this URL (do not open it in a browser).</p>
+      <div class="mcp-box">
+        <code id="mcpUrl">http://127.0.0.1:8766/mcp</code>
+        <button type="button" class="ghost" id="copyMcp">Copy</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    function shortPath(p) {
+      if (!p) return "—";
+      const parts = String(p).replace(/\\/g, "/").split("/");
+      return parts.length <= 3 ? p : "…/" + parts.slice(-3).join("/");
+    }
+
+    async function loadStatus() {
+      const res = await fetch("/api/daemon/status");
+      const data = await res.json();
+      const pending = (data.pending_extract || []).length;
+      const running = !!data.running;
+      const syncing = !!data.syncing;
+      document.getElementById("metrics").innerHTML = [
+        ["State", running ? "running" : "stopped", running ? "ok" : "warn"],
+        ["Sync", syncing ? "syncing" : "idle", syncing ? "warn" : "ok"],
+        ["Pending", String(pending), pending ? "warn" : ""],
+        ["Workspace", data.workspace_id || "default", ""],
+      ].map(([label, value, cls]) => `
+        <div class="metric">
+          <span class="metric-label">${label}</span>
+          <span class="metric-value ${cls}">${value}</span>
+        </div>
+      `).join("") + `
+        <div class="metric" style="grid-column: 1 / -1">
+          <span class="metric-label">Project</span>
+          <span class="metric-value" title="${data.project_root || ""}">${shortPath(data.project_root)}</span>
+        </div>
+      `;
+      document.getElementById("status").textContent = JSON.stringify({
+        project_root: data.project_root,
+        workspace_id: data.workspace_id,
+        pending_extract: data.pending_extract,
+        last_sync_at: data.last_sync_at,
+        last_extract_at: data.last_extract_at,
+        mcp_url: data.mcp_url,
+      }, null, 2);
+      if (data.mcp_url) document.getElementById("mcpUrl").textContent = data.mcp_url;
+    }
+
+    document.getElementById("copyMcp").addEventListener("click", async () => {
+      const text = document.getElementById("mcpUrl").textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        document.getElementById("copyMcp").textContent = "Copied";
+        setTimeout(() => { document.getElementById("copyMcp").textContent = "Copy"; }, 1200);
+      } catch (_) {
+        document.getElementById("copyMcp").textContent = "Failed";
+      }
+    });
+
+    loadStatus();
+    setInterval(loadStatus, 5000);
+  </script>
+</body>
+</html>

@@ -59,27 +59,27 @@ def _graph_payload(ctx: ResolvedContext) -> dict[str, Any]:
     return to_playground_graph(raw)
 
 
-def run_viz_server(
-    ctx: ResolvedContext,
-    host: str = "127.0.0.1",
-    port: int = 8765,
-    open_browser: bool = True,
-) -> None:
-    from fastapi import FastAPI, HTTPException
-    from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import FileResponse, HTMLResponse
-    from fastapi.staticfiles import StaticFiles
-    import uvicorn
+def register_viz_routes(app: Any, ctx: ResolvedContext) -> None:
+    """Mount ``/api/graph``, ``/assets``, ``/viz``, and SPA routes on ``app``.
 
-    static_dir = _resolve_static_dir()
-    app = FastAPI()
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[],
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
-        allow_methods=["GET"],
-        allow_headers=["*"],
-    )
+    The bundled SPA uses absolute ``/assets`` and ``/api/graph`` paths, so those
+    stay at the server root. ``/viz`` redirects to ``/explore``.
+    """
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+    from fastapi.staticfiles import StaticFiles
+
+    try:
+        static_dir = _resolve_static_dir()
+    except FileNotFoundError:
+        @app.get("/viz")
+        async def viz_missing() -> HTMLResponse:
+            return HTMLResponse(
+                "Visualization bundle missing. Run scripts/build_viz.ps1",
+                status_code=503,
+            )
+
+        return
 
     @app.get("/api/graph")
     async def get_graph() -> dict[str, Any]:
@@ -88,16 +88,61 @@ def run_viz_server(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
+    assets_dir = static_dir / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="viz_assets")
+
+    @app.get("/viz")
+    @app.get("/viz/")
+    async def viz_entry() -> RedirectResponse:
+        return RedirectResponse(url="/explore", status_code=307)
+
+    @app.get("/explore")
+    async def explore_spa() -> FileResponse:
+        return FileResponse(static_dir / "index.html")
 
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str) -> FileResponse | HTMLResponse:
+        # Daemon hub routes must not be swallowed by the SPA catch-all.
+        first = full_path.split("/", 1)[0]
+        if first in {
+            "home",
+            "settings",
+            "mcp",
+            "api",
+            "ui",
+            "docs",
+            "openapi.json",
+            "redoc",
+        }:
+            raise HTTPException(status_code=404, detail="Not found")
         if full_path and (static_dir / full_path).is_file():
             return FileResponse(static_dir / full_path)
         index = static_dir / "index.html"
         if index.is_file():
             return FileResponse(index)
         return HTMLResponse("Visualization bundle missing index.html", status_code=404)
+
+
+def run_viz_server(
+    ctx: ResolvedContext,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    open_browser: bool = True,
+) -> None:
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    import uvicorn
+
+    app = FastAPI()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[],
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
+    register_viz_routes(app, ctx)
 
     backend = f"http://{host}:{port}"
     params = urllib.parse.urlencode({"backend": backend})

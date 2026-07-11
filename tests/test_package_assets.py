@@ -18,6 +18,10 @@ def test_viz_dist_is_tracked_not_website_dist() -> None:
     assert static_index.is_file()
     daemon_settings = REPO_ROOT / "src" / "litgraph" / "daemon" / "static" / "settings.html"
     assert daemon_settings.is_file()
+    daemon_home = REPO_ROOT / "src" / "litgraph" / "daemon" / "static" / "home.html"
+    assert daemon_home.is_file()
+    daemon_css = REPO_ROOT / "src" / "litgraph" / "daemon" / "static" / "common.css"
+    assert daemon_css.is_file()
 
 
 def test_viz_assets_importable_from_package() -> None:
@@ -29,6 +33,10 @@ def test_viz_assets_importable_from_package() -> None:
     assert static_index.is_file()
     settings = files("litgraph.daemon").joinpath("static/settings.html")
     assert settings.is_file()
+    home = files("litgraph.daemon").joinpath("static/home.html")
+    assert home.is_file()
+    css = files("litgraph.daemon").joinpath("static/common.css")
+    assert css.is_file()
 
 
 @pytest.mark.slow
@@ -52,3 +60,5 @@ def test_built_wheel_contains_viz_assets(tmp_path: Path) -> None:
     assert "litgraph/viz/dist/index.html" in names
     assert "litgraph/viz/static/index.html" in names
     assert "litgraph/daemon/static/settings.html" in names
+    assert "litgraph/daemon/static/home.html" in names
+    assert "litgraph/daemon/static/common.css" in names

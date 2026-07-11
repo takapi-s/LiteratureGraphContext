@@ -105,11 +105,11 @@ def test_manual_extract_mode_scheduler_uses_extract_flag(project_tmp):
         assert mock_sync.call_args.kwargs["extract"] is False
 
 
-def test_daemon_settings_and_extract_api(project_tmp, monkeypatch):
+def _daemon_test_client(project_tmp, monkeypatch, runtime=None):
     from litgraph.cli.config_manager import resolve_context
 
     ctx = resolve_context(project_tmp)
-    runtime = DaemonRuntime(ctx)
+    runtime = runtime or DaemonRuntime(ctx)
 
     @asynccontextmanager
     async def _noop_mcp_lifespan(*_args, **_kwargs):
@@ -121,8 +121,11 @@ def test_daemon_settings_and_extract_api(project_tmp, monkeypatch):
     monkeypatch.setattr(runtime.scheduler, "start", lambda: None)
     monkeypatch.setattr(runtime, "start_folder_watch", lambda: None)
     runtime.shutdown = lambda: None
+    return runtime, create_daemon_app(runtime)
 
-    app = create_daemon_app(runtime)
+
+def test_daemon_settings_and_extract_api(project_tmp, monkeypatch):
+    runtime, app = _daemon_test_client(project_tmp, monkeypatch)
     with TestClient(app) as client:
         res = client.get("/api/daemon/settings")
         assert res.status_code == 200
@@ -140,9 +143,77 @@ def test_daemon_settings_and_extract_api(project_tmp, monkeypatch):
         res = client.get("/api/daemon/status")
         assert res.status_code == 200
         assert "p_pending" in res.json()["pending_extract"]
+        assert res.json()["home_url"].endswith("/home")
+        assert res.json()["settings_url"].endswith("/settings")
+        assert res.json()["viz_url"].endswith("/viz")
 
         with patch.object(runtime.scheduler, "trigger_extract", return_value={"extracted": 1}) as mock_extract:
             res = client.post("/api/daemon/extract", json={})
             assert res.status_code == 200
             assert res.json()["extracted"] == 1
             mock_extract.assert_called_once()
+
+
+def test_daemon_home_and_settings_routes(project_tmp, monkeypatch):
+    _, app = _daemon_test_client(project_tmp, monkeypatch)
+    with TestClient(app, follow_redirects=False) as client:
+        res = client.get("/")
+        assert res.status_code == 307
+        assert res.headers["location"] == "/home"
+
+        res = client.get("/home")
+        assert res.status_code == 200
+        assert "LiteratureGraph" in res.text
+        assert "--canvas" in res.text  # common.css inlined
+        assert "<style>" in res.text
+
+        res = client.get("/settings")
+        assert res.status_code == 200
+        assert "API keys" in res.text
+        assert "--canvas" in res.text
+
+        res = client.get("/ui/common.css")
+        assert res.status_code == 200
+        assert b"--canvas" in res.content
+
+        res = client.get("/viz", follow_redirects=False)
+        assert res.status_code == 307
+        assert res.headers["location"] == "/explore"
+
+
+def test_daemon_secrets_api_masks_and_writes(project_tmp, monkeypatch, tmp_path):
+    from litgraph.cli import config_manager
+
+    env_file = tmp_path / "global.env"
+    monkeypatch.setattr(config_manager, "GLOBAL_ENV_FILE", env_file)
+    monkeypatch.setattr("litgraph.daemon.secrets.GLOBAL_ENV_FILE", env_file)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    _, app = _daemon_test_client(project_tmp, monkeypatch)
+    with TestClient(app) as client:
+        res = client.get("/api/daemon/secrets")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["keys"]["OPENAI_API_KEY"]["configured"] is False
+
+        res = client.put(
+            "/api/daemon/secrets",
+            json={
+                "llm_provider": "openai",
+                "llm_model": "gpt-4o-mini",
+                "OPENAI_API_KEY": "sk-test-secret-1234",
+            },
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["keys"]["OPENAI_API_KEY"]["configured"] is True
+        assert body["keys"]["OPENAI_API_KEY"]["hint"] == "…1234"
+        assert "sk-test-secret-1234" not in res.text
+        assert "OPENAI_API_KEY=sk-test-secret-1234" in env_file.read_text(encoding="utf-8")
+
+        res = client.put(
+            "/api/daemon/secrets",
+            json={"clear": ["OPENAI_API_KEY"]},
+        )
+        assert res.status_code == 200
+        assert res.json()["keys"]["OPENAI_API_KEY"]["configured"] is False

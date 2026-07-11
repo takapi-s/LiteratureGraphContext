@@ -740,7 +740,7 @@ def daemon_cmd(
         f"http://{host or runtime.settings.http_host}:{port or runtime.settings.http_port} "
         f"(project: {ctx.project_root})"
     )
-    console.print("[dim]Settings UI: /  |  MCP endpoint: /mcp[/dim]")
+    console.print("[dim]Home: /home  |  Settings: /settings  |  Graph: /viz  |  MCP: /mcp[/dim]")
     run_daemon_server(runtime, host=host, port=port)
 
 

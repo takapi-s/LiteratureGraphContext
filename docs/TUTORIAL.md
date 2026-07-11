@@ -195,7 +195,9 @@ One long-lived process: settings UI, optional Zotero polling, folder watch, and 
 litgraph daemon
 ```
 
-- Settings UI: `http://127.0.0.1:8766/`
+- Home: `http://127.0.0.1:8766/` → `/home` (entry to Settings / Graph / MCP)
+- Settings: `http://127.0.0.1:8766/settings` (sync, extract, API keys)
+- Graph: `http://127.0.0.1:8766/viz`
 - MCP endpoint: `http://127.0.0.1:8766/mcp`
 
 In `litgraph setup`, choose **daemon-http** so the client uses a URL instead of spawning stdio:

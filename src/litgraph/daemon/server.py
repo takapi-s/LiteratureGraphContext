@@ -6,13 +6,23 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
 from litgraph.daemon.runtime import DaemonRuntime
-from litgraph.daemon.state import list_pending_extract, settings_page_path
+from litgraph.daemon.secrets import apply_secrets_update, secrets_status
+from litgraph.daemon.state import (
+    common_css_path,
+    home_page_path,
+    list_pending_extract,
+    render_daemon_html,
+    settings_page_path,
+    static_dir,
+)
 from litgraph.mcp.http_mount import mcp_http_lifespan, register_mcp_http_route
+from litgraph.viz.server import register_viz_routes
 
 
 def create_daemon_app(runtime: DaemonRuntime) -> Any:
     from fastapi import FastAPI, HTTPException
-    from fastapi.responses import FileResponse, JSONResponse
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+    from fastapi.staticfiles import StaticFiles
 
     bind_host = runtime.settings.http_host
     bind_port = runtime.settings.http_port
@@ -33,12 +43,33 @@ def create_daemon_app(runtime: DaemonRuntime) -> Any:
     app = FastAPI(title="LiteratureGraph Daemon", lifespan=lifespan)
     register_mcp_http_route(app, transport_holder)
 
+    @app.get("/ui/common.css")
+    async def common_css() -> FileResponse:
+        css = common_css_path()
+        if not css.is_file():
+            raise HTTPException(status_code=404, detail="common.css missing")
+        return FileResponse(css, media_type="text/css; charset=utf-8")
+
+    # Remaining static assets (if any); explicit CSS route above wins first.
+    app.mount("/ui", StaticFiles(directory=static_dir()), name="daemon_ui")
+
     @app.get("/")
-    async def settings_page() -> FileResponse:
+    async def root() -> RedirectResponse:
+        return RedirectResponse(url="/home", status_code=307)
+
+    @app.get("/home")
+    async def home_page() -> HTMLResponse:
+        page = home_page_path()
+        if not page.is_file():
+            raise HTTPException(status_code=404, detail="Home page missing")
+        return HTMLResponse(render_daemon_html(page))
+
+    @app.get("/settings")
+    async def settings_page() -> HTMLResponse:
         page = settings_page_path()
         if not page.is_file():
             raise HTTPException(status_code=404, detail="Settings page missing")
-        return FileResponse(page)
+        return HTMLResponse(render_daemon_html(page))
 
     @app.get("/api/daemon/settings")
     async def get_settings() -> Dict[str, Any]:
@@ -59,6 +90,19 @@ def create_daemon_app(runtime: DaemonRuntime) -> Any:
         settings = runtime.update_settings(patch)
         return settings.to_dict()
 
+    @app.get("/api/daemon/secrets")
+    async def get_secrets() -> Dict[str, Any]:
+        return secrets_status(runtime.ctx)
+
+    @app.put("/api/daemon/secrets")
+    async def put_secrets(payload: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return apply_secrets_update(runtime.ctx, payload or {})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     @app.get("/api/daemon/status")
     async def get_status() -> Dict[str, Any]:
         runtime.status.pending_extract = list_pending_extract(runtime.ctx)
@@ -66,6 +110,9 @@ def create_daemon_app(runtime: DaemonRuntime) -> Any:
         payload["project_root"] = str(runtime.ctx.project_root)
         payload["workspace_id"] = runtime.ctx.workspace_id
         payload["mcp_url"] = f"http://{bind_host}:{bind_port}/mcp"
+        payload["home_url"] = f"http://{bind_host}:{bind_port}/home"
+        payload["settings_url"] = f"http://{bind_host}:{bind_port}/settings"
+        payload["viz_url"] = f"http://{bind_host}:{bind_port}/viz"
         return payload
 
     @app.post("/api/daemon/sync")
@@ -101,6 +148,8 @@ def create_daemon_app(runtime: DaemonRuntime) -> Any:
             )
         raise exc
 
+    # SPA catch-all must be registered last so /home, /settings, /api/* win.
+    register_viz_routes(app, runtime.ctx)
     return app
 
 

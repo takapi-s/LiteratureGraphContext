@@ -1,89 +1,162 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>LiteratureGraph Daemon</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
-    main { max-width: 760px; margin: 0 auto; padding: 24px; }
-    h1 { margin-top: 0; font-size: 1.5rem; }
-    section { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    label { display: block; margin: 12px 0 6px; font-size: 0.9rem; color: #cbd5e1; }
-    input, select { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #e2e8f0; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    button { margin-top: 12px; margin-right: 8px; padding: 8px 14px; border-radius: 8px; border: 0; background: #38bdf8; color: #0f172a; font-weight: 600; cursor: pointer; }
-    button.secondary { background: #475569; color: #f8fafc; }
-    #status, #message { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; color: #94a3b8; }
-    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #334155; margin-right: 6px; font-size: 12px; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings — LiteratureGraph Daemon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/ui/common.css" />
 </head>
 <body>
-  <main>
-    <h1>LiteratureGraph Daemon</h1>
-    <p>Zotero 同期・extract 設定・MCP 常駐の管理ページです。</p>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <a class="brand-mark" href="/home">LiteratureGraph</a>
+        <span class="brand-sub">daemon · settings</span>
+      </div>
+      <nav class="nav" aria-label="Primary">
+        <a href="/home">Home</a>
+        <a class="active" href="/settings">Settings</a>
+        <a href="/viz">Graph</a>
+      </nav>
+    </header>
 
-    <section>
-      <h2>状態</h2>
-      <div id="badges"></div>
-      <pre id="status"></pre>
+    <section class="hero">
+      <p class="eyebrow">Configuration</p>
+      <h1>Settings</h1>
+      <p class="lede">Sync, extract, and API keys. Secrets are stored in <code>~/.litgraph/.env</code>.</p>
     </section>
 
-    <section>
-      <h2>設定</h2>
-      <label for="extract_mode">Extract モード</label>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Status</h2>
+      </div>
+      <div class="metrics" id="metrics"></div>
+      <details class="status-raw">
+        <summary>Raw status</summary>
+        <pre id="status"></pre>
+      </details>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Daemon</h2>
+      </div>
+      <label for="extract_mode">Extract mode</label>
       <select id="extract_mode">
-        <option value="manual">manual（UI / ボタンから extract）</option>
-        <option value="auto">auto（同期時に自動 extract）</option>
+        <option value="manual">manual (extract from UI / button)</option>
+        <option value="auto">auto (extract during sync)</option>
       </select>
 
       <div class="row">
         <div>
-          <label for="zotero_interval_sec">Zotero 同期間隔（秒）</label>
+          <label for="zotero_interval_sec">Zotero sync interval (seconds)</label>
           <input id="zotero_interval_sec" type="number" min="60" step="60" />
         </div>
         <div>
-          <label for="zotero_enabled">Zotero 同期</label>
+          <label for="zotero_enabled">Zotero sync</label>
           <select id="zotero_enabled">
-            <option value="true">有効</option>
-            <option value="false">無効</option>
+            <option value="true">Enabled</option>
+            <option value="false">Disabled</option>
           </select>
         </div>
       </div>
 
       <div class="row">
         <div>
-          <label for="watch_folder">papers_dir 監視</label>
+          <label for="watch_folder">Watch papers_dir</label>
           <select id="watch_folder">
-            <option value="false">無効</option>
-            <option value="true">有効</option>
+            <option value="false">Disabled</option>
+            <option value="true">Enabled</option>
           </select>
         </div>
         <div>
-          <label for="watch_auto_extract">監視時 auto extract</label>
+          <label for="watch_auto_extract">Auto extract on watch</label>
           <select id="watch_auto_extract">
-            <option value="false">無効</option>
-            <option value="true">有効</option>
+            <option value="false">Disabled</option>
+            <option value="true">Enabled</option>
           </select>
         </div>
       </div>
 
-      <button id="save">設定を保存</button>
-      <span id="message"></span>
+      <div class="actions">
+        <button type="button" class="primary" id="save">Save daemon settings</button>
+      </div>
     </section>
 
-    <section>
-      <h2>操作</h2>
-      <button id="syncNow">今すぐ Zotero 同期</button>
-      <button id="extractNow" class="secondary">pending を extract</button>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>API keys / LLM</h2>
+      </div>
+      <p class="hint" id="envFileHint">Leave fields blank to keep existing values.</p>
+
+      <div class="row">
+        <div>
+          <label for="llm_provider">LLM provider</label>
+          <select id="llm_provider">
+            <option value="openai">openai</option>
+            <option value="anthropic">anthropic</option>
+            <option value="gemini">gemini</option>
+            <option value="ollama">ollama</option>
+          </select>
+        </div>
+        <div>
+          <label for="llm_model">LLM model</label>
+          <input id="llm_model" type="text" placeholder="gpt-4o-mini" />
+        </div>
+      </div>
+
+      <label for="OPENAI_API_KEY">OPENAI_API_KEY</label>
+      <input id="OPENAI_API_KEY" type="password" autocomplete="off" placeholder="Not set" />
+      <div class="key-meta" id="meta_OPENAI_API_KEY"></div>
+
+      <label for="ANTHROPIC_API_KEY">ANTHROPIC_API_KEY</label>
+      <input id="ANTHROPIC_API_KEY" type="password" autocomplete="off" placeholder="Not set" />
+      <div class="key-meta" id="meta_ANTHROPIC_API_KEY"></div>
+
+      <label for="GEMINI_API_KEY">GEMINI_API_KEY</label>
+      <input id="GEMINI_API_KEY" type="password" autocomplete="off" placeholder="Not set" />
+      <div class="key-meta" id="meta_GEMINI_API_KEY"></div>
+
+      <label for="ZOTERO_API_KEY">ZOTERO_API_KEY</label>
+      <input id="ZOTERO_API_KEY" type="password" autocomplete="off" placeholder="Not set" />
+      <div class="key-meta" id="meta_ZOTERO_API_KEY"></div>
+
+      <label for="ZOTERO_USER_ID">ZOTERO_USER_ID (usually auto-resolved)</label>
+      <input id="ZOTERO_USER_ID" type="text" autocomplete="off" placeholder="Not set" />
+      <div class="key-meta" id="meta_ZOTERO_USER_ID"></div>
+
+      <div class="actions">
+        <button type="button" class="primary" id="saveSecrets">Save keys / LLM</button>
+        <button type="button" class="danger" id="clearZotero">Clear Zotero keys</button>
+      </div>
     </section>
-  </main>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Actions</h2>
+      </div>
+      <div class="actions">
+        <button type="button" class="primary" id="syncNow">Sync Zotero now</button>
+        <button type="button" class="ghost" id="extractNow">Extract pending</button>
+      </div>
+      <p id="message"></p>
+    </section>
+  </div>
 
   <script>
-    const fields = [
-      "extract_mode", "zotero_interval_sec", "zotero_enabled",
-      "watch_folder", "watch_auto_extract",
+    const SECRET_KEYS = [
+      "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+      "ZOTERO_API_KEY", "ZOTERO_USER_ID",
     ];
+
+    function setMessage(text, ok) {
+      const el = document.getElementById("message");
+      el.textContent = text;
+      el.className = ok === true ? "ok" : ok === false ? "err" : "";
+    }
 
     function boolSelect(id, value) {
       document.getElementById(id).value = value ? "true" : "false";
@@ -99,14 +172,42 @@
       boolSelect("watch_auto_extract", !!data.watch_auto_extract);
     }
 
+    async function loadSecrets() {
+      const res = await fetch("/api/daemon/secrets");
+      const data = await res.json();
+      if (data.env_file) {
+        document.getElementById("envFileHint").textContent =
+          `Keys are stored in ${data.env_file}. Leave fields blank to keep existing values.`;
+      }
+      document.getElementById("llm_provider").value = data.llm_provider || "openai";
+      document.getElementById("llm_model").value = data.llm_model || "";
+      const keys = data.keys || {};
+      for (const name of SECRET_KEYS) {
+        const info = keys[name] || {};
+        const input = document.getElementById(name);
+        input.value = "";
+        input.placeholder = info.configured ? `Configured ${info.hint || ""}`.trim() : "Not set";
+        const meta = document.getElementById(`meta_${name}`);
+        meta.textContent = info.configured ? `configured ${info.hint || ""}`.trim() : "not set";
+        meta.className = "key-meta" + (info.configured ? " on" : "");
+      }
+    }
+
     async function loadStatus() {
       const res = await fetch("/api/daemon/status");
       const data = await res.json();
-      const badges = [];
-      badges.push(`<span class="pill">${data.running ? "running" : "stopped"}</span>`);
-      badges.push(`<span class="pill">${data.syncing ? "syncing" : "idle"}</span>`);
-      if (data.mcp_url) badges.push(`<span class="pill">MCP ${data.mcp_url}</span>`);
-      document.getElementById("badges").innerHTML = badges.join("");
+      const pending = (data.pending_extract || []).length;
+      document.getElementById("metrics").innerHTML = [
+        ["State", data.running ? "running" : "stopped", data.running ? "ok" : "warn"],
+        ["Sync", data.syncing ? "syncing" : "idle", data.syncing ? "warn" : "ok"],
+        ["Pending", String(pending), pending ? "warn" : ""],
+        ["MCP", data.mcp_url ? "ready" : "—", data.mcp_url ? "ok" : ""],
+      ].map(([label, value, cls]) => `
+        <div class="metric">
+          <span class="metric-label">${label}</span>
+          <span class="metric-value ${cls}">${value}</span>
+        </div>
+      `).join("");
       document.getElementById("status").textContent = JSON.stringify(data, null, 2);
     }
 
@@ -123,25 +224,60 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      document.getElementById("message").textContent = res.ok ? "保存しました" : `保存失敗: ${await res.text()}`;
+      setMessage(res.ok ? "Daemon settings saved" : `Save failed: ${await res.text()}`, res.ok);
       await loadStatus();
     });
 
+    document.getElementById("saveSecrets").addEventListener("click", async () => {
+      const payload = {
+        llm_provider: document.getElementById("llm_provider").value,
+        llm_model: document.getElementById("llm_model").value,
+      };
+      for (const name of SECRET_KEYS) {
+        const value = document.getElementById(name).value.trim();
+        if (value) payload[name] = value;
+      }
+      const res = await fetch("/api/daemon/secrets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      setMessage(res.ok ? "Keys / LLM saved" : `Save failed: ${await res.text()}`, res.ok);
+      await loadSecrets();
+      await loadStatus();
+    });
+
+    document.getElementById("clearZotero").addEventListener("click", async () => {
+      if (!confirm("Clear ZOTERO_API_KEY and ZOTERO_USER_ID?")) return;
+      const res = await fetch("/api/daemon/secrets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear: ["ZOTERO_API_KEY", "ZOTERO_USER_ID"] }),
+      });
+      setMessage(res.ok ? "Zotero keys cleared" : `Clear failed: ${await res.text()}`, res.ok);
+      await loadSecrets();
+    });
+
     document.getElementById("syncNow").addEventListener("click", async () => {
-      document.getElementById("message").textContent = "同期中…";
+      setMessage("Syncing…");
       const res = await fetch("/api/daemon/sync", { method: "POST" });
-      document.getElementById("message").textContent = res.ok ? "同期完了" : `同期失敗: ${await res.text()}`;
+      setMessage(res.ok ? "Sync complete" : `Sync failed: ${await res.text()}`, res.ok);
       await loadStatus();
     });
 
     document.getElementById("extractNow").addEventListener("click", async () => {
-      document.getElementById("message").textContent = "extract 中…";
-      const res = await fetch("/api/daemon/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      document.getElementById("message").textContent = res.ok ? "extract 完了" : `extract 失敗: ${await res.text()}`;
+      setMessage("Extracting…");
+      const res = await fetch("/api/daemon/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      setMessage(res.ok ? "Extract complete" : `Extract failed: ${await res.text()}`, res.ok);
       await loadStatus();
     });
 
     loadSettings();
+    loadSecrets();
     loadStatus();
     setInterval(loadStatus, 5000);
   </script>
