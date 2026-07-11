@@ -1,6 +1,6 @@
 # LiteratureGraphContext Roadmap
 
-> **Current version**: 1.0.0  
+> **Current version**: 1.0.1  
 > **Last updated**: 2026-07
 
 Remaining OSS (`literature-graph` on PyPI) tasks and known constraints. For early design history (pre-v0.5), see [docs/literature_graph_mcp_implementation_plan.deprecated.md](docs/literature_graph_mcp_implementation_plan.deprecated.md). User docs: [docs/TUTORIAL.md](docs/TUTORIAL.md).

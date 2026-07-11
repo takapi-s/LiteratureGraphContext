@@ -40,7 +40,7 @@ Check the CLI:
 litgraph version
 ```
 
-**Expected:** a version string (for example `1.0.0`).
+**Expected:** a version string (for example `1.0.1`).
 
 ---
 
