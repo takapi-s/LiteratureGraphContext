@@ -72,10 +72,17 @@ litgraph = "litgraph.cli.main:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/litgraph"]
+# Non-Python assets under src/litgraph/ (viz/dist, viz/static, daemon/static) are
+# VCS-tracked and included automatically by hatchling. Do NOT force-include them:
+# that duplicates paths and fails the wheel build. website/dist/ is only a local
+# Vite output (gitignored); sync into src/litgraph/viz/dist via scripts/build_viz.ps1.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "slow: builds sdist/wheel; skip in fast local loops with -m \"not slow\"",
+]
 
 [tool.coverage.run]
 source = ["litgraph"]
