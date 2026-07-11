@@ -364,7 +364,8 @@ Use `litgraph daemon` + **daemon-http** in setup (section 4, option B). Optional
 ## Next steps
 
 - [README](../README.md) — design philosophy and config reference  
-- [ROADMAP.md](../ROADMAP.md) — v0.13 structuring, v1.0 PyPI, daemon polish  
+- [ROADMAP.md](../ROADMAP.md) — ongoing paper-structuring quality, daemon polish, v2.0 installer  
+
 - Programmatic use: `from litgraph import LitgraphContext` (see package API after install)
 
 When in doubt: `litgraph doctor` → `litgraph index -y` → `litgraph test-mcp`.

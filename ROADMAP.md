@@ -24,22 +24,23 @@ LGC is a **structured evidence layer** (not an interpretation engine).
 
 ---
 
-## Current focus (v0.13)
-
-**Approach:** Improve how a single paper is parsed, sectioned, extracted, and linked in the graph. Write documentation in one pass at v1.0.
+## Current focus
 
 | Priority | Item | Rationale |
 |---|---|---|
-| ✅ | v0.9 API & ingest | `LitgraphContext` + ingest adapters complete |
-| ✅ | v0.10 workspace | `workspace_id` scoping complete |
-| ✅ | v0.11 Zotero + PDF | Full pipeline + PDF section improvements complete |
-| ✅ | v0.12 Remote MCP & watch | HTTP MCP + `watch_papers_directory` complete |
-| Last | v1.0 PyPI + docs | First stable `pip install literature-graph` — packaging ready; publish via tag |
-| Next | v1.1 Background daemon | Zotero auto-sync, HTTP MCP hub, settings UI (mostly shipped) |
-| Later | v1.x → v2.0 | v1.x: packaging prep (PyInstaller, supervisor); **v2.0: OS installers** (Python not required) |
-| Parallel | v0.13 Paper structuring | Section hierarchy, citation linking, extraction quality (continues after 1.0) |
+| ✅ | v0.9–v0.12 | API, workspace, Zotero+PDF, HTTP MCP & watch — complete |
+| ✅ | v1.0 PyPI + docs | First stable `pip install literature-graph` |
+| Next | v1.1 Background daemon polish | MCP fallback during ingest, setup defaults, Zotero status visibility |
+| Later | v1.x → v2.0 | Packaging prep (PyInstaller, supervisor); **v2.0: OS installers** (Python not required) |
+| Always | Paper structuring quality | Not a version gate — continuous track below (I03–I05, I15) |
 
-**v0.13 scope** (in recommended order — measure first, then improve):
+---
+
+## Ongoing: paper structuring quality
+
+**Not a release version.** Parse → section → extract → build quality is permanent product work: measure, improve, re-measure whenever touching the pipeline. Feature minors and installers ship on their own cadence; this track runs in parallel forever.
+
+**Recommended order** (measure first, then improve):
 
 | Area | Status | Next |
 |---|---|---|
@@ -51,6 +52,22 @@ LGC is a **structured evidence layer** (not an interpretation engine).
 | Section containment | Not started | `CONTAINS` edges for section / subsection + section-level embeddings in the same pass, stored in-graph via I15 (avoids a second re-index) (I03) |
 | Extraction quality | Active | Contributions, limitations, methods, tasks with reliable `page` / `section` / `evidence_text` |
 | Claim-level structure | Deferred | Paper-level embeddings only today; claim nodes later |
+
+**Backlog detail** (same items; check off as work lands in any 1.x release):
+
+- [ ] Golden set first — expected sections / citations / evidence for `examples/papers/`, enforced in pytest; every item below is measured against it
+- [ ] PDF section diagnostics — failure modes, confidence, repair hints; benchmark GROBID / docling vs in-house splitter on the golden set to decide how far to push the custom parser (I04)
+- [ ] Citation resolution accuracy — title fuzzing + DOI / arXiv IDs, optional Semantic Scholar lookup with offline fallback; merge itself already ships in `graph_builder.py` (I05)
+- [ ] In-graph embeddings (I15) — store vectors as node properties instead of `cache/{ws}/embeddings.json`:
+  - Kuzu (default): `FLOAT[]` property + vector index (HNSW extension) for similarity search
+  - Neo4j (optional backend): array property + native vector index, behind the same store interface
+  - Search path: replace full-JSON load + Python cosine in `query/embedding_store.py` with store-side queries
+  - Lifecycle: vectors live and die with the graph — no more stale "ghost" vectors after DB re-index
+  - Keep out of the graph store: `paper_registry.json` (identity must survive DB wipe) and `cache/parsed` / `cache/extracted` (LLM-cost pipeline caches)
+- [ ] Section / subsection hierarchy — `CONTAINS` edges + section-level embeddings in the same re-index, stored in-graph via I15 (I03)
+- [ ] Extraction grounding — reliable `page` / `section` / `evidence_text` on claims, limitations, contributions
+
+**Migration note:** Shipping Section nodes, `CONTAINS` edges, or in-graph vectors requires a re-index (same policy as v0.6 / v0.10). Legacy `embeddings.json` can be read once as a fallback and deleted afterwards.
 
 ---
 
@@ -64,9 +81,9 @@ Uncommitted, uncertain ideas. Edit `docs/assets/idea_matrix.drawio.svg` (draw.io
 |---|---|---|
 | I01 | Hybrid search entry (embeddings + keyword + graph) | v0.5 ✅ |
 | I02 | New inputs: arXiv / URL / Zotero connectors ✅ — CSV not implemented | v0.9, v0.11 ✅ / CSV → v1.2+ candidate |
-| I03 | Containment: section / subsection + `CONTAINS` edges (+ section embeddings) | v0.13 |
-| I04 | PDF structure: robust section detection + diagnostics | detection v0.11 ✅ / diagnostics v0.13 |
-| I05 | Citations: `CITES` resolution accuracy (external IDs) — refs+bib merge shipped | v0.13 |
+| I03 | Containment: section / subsection + `CONTAINS` edges (+ section embeddings) | ongoing quality |
+| I04 | PDF structure: robust section detection + diagnostics | detection v0.11 ✅ / diagnostics → ongoing |
+| I05 | Citations: `CITES` resolution accuracy (external IDs) — refs+bib merge shipped | ongoing quality |
 | I06 | ID resolution & errors: actionable hints in MCP / CLI | v0.8 ✅ |
 | I07 | Auto-generate `paper_id_map` from `paper_registry` | v1.2+ candidate |
 | I08 | Graph UI: paper-centric sidebar + preview cards | v0.8 ✅ |
@@ -76,7 +93,7 @@ Uncommitted, uncertain ideas. Edit `docs/assets/idea_matrix.drawio.svg` (draw.io
 | I12 | Folder watch / auto-ingest (`watch_papers_directory`) | v0.12 ✅ |
 | I13 | MCP setup wizard (interactive onboarding) | v0.8 ✅ |
 | I14 | Zotero write-back: push extracted limitations / comparisons to Zotero tags & notes | v1.2+ candidate |
-| I15 | In-graph embeddings: vectors as node properties + vector index (Kuzu HNSW / Neo4j), retire `embeddings.json` | v0.13 |
+| I15 | In-graph embeddings: vectors as node properties + vector index (Kuzu HNSW / Neo4j), retire `embeddings.json` | ongoing quality |
 | I16 | End-user distribution: PyInstaller frozen exe, PySide6 tray supervisor, Inno Setup / DMG / deb, GitHub Releases | v1.x spike / **v2.0 ship** |
 
 ---
@@ -91,12 +108,12 @@ Uncommitted, uncertain ideas. Edit `docs/assets/idea_matrix.drawio.svg` (draw.io
 | MCP contract tests | **Done (v0.6)** | `litgraph test-mcp` |
 | Entity resolution (duplicate Method/Task) | **Done (v0.7)** | catalog fuzzy merge + optional LLM |
 | MCP tool surface (14 → 6 tools) | **Done (v0.7)** | 6 core query tools; ingest is CLI-only |
-| PDF parsing | **Active (v0.13)** | Harden section detection, diagnostics, edge cases (I04) |
+| PDF parsing | **Ongoing quality** | Harden section detection, diagnostics, edge cases (I04) |
 | Graph UI | **Done (v0.8)** | Paper sidebar + type-specific preview cards (I08) |
 | MCP stability | **Done (v1.1 daemon)** / docs (v1.0) | `litgraph daemon` single-writer hub; document HTTP MCP + avoid stdio lock conflicts |
 | Zotero | **Done (v0.11)** | Full PDF pipeline shipped; incremental sync in daemon (v1.1) |
 | Distribution | **Active (v2.0)** | v1.0 = PyPI (`pip install`); v2.0 = PyInstaller bundle + Inno Setup / DMG + system-tray supervisor |
-| Embedding store (JSON sidecar, full load + O(n) cosine) | **Active (v0.13)** | In-graph vectors + vector index, Kuzu & Neo4j (I15) |
+| Embedding store (JSON sidecar, full load + O(n) cosine) | **Ongoing quality** | In-graph vectors + vector index, Kuzu & Neo4j (I15) |
 | md parser | Deferred | Single-paper notes only |
 | Neo4j migration | Deferred | No migration tool from Kuzu |
 | Claim-level embeddings | Deferred | Paper-level embeddings only |
@@ -123,10 +140,12 @@ Distribution has **two channels** — do not conflate them:
 | **1.x** | Feature additions after 1.0 (semver minor); includes background daemon (v1.1) |
 | **2.0** | **End-user distribution** — PyInstaller-frozen binaries, OS installers (Inno Setup / DMG / deb), PySide6 system-tray supervisor, logon autostart, GitHub Releases + WinGet (breaking API changes may ride along) |
 
+Paper structuring quality (formerly labeled “v0.13”) is **not** a version in this line — see [Ongoing: paper structuring quality](#ongoing-paper-structuring-quality).
+
 ```text
-0.7 ✅ → … → 0.12 ✅ → 0.13 → 1.0 (PyPI) → 1.1 (daemon) → 1.x → 2.0 (installer)
-  │                         │              │                │
-  └─ pre-PyPI development   └─ now         └─ pip install   └─ frozen exe + OS installer
+0.7 ✅ → … → 0.12 ✅ → 1.0 (PyPI) ✅ → 1.1 (daemon) → 1.x → 2.0 (installer)
+                                      ║
+                    ongoing ══════════╩══ paper structuring quality (parallel forever)
 ```
 
 ### Pre-1.0 (0.x)
@@ -182,27 +201,9 @@ Do not write documentation before features stabilize. Supplement onboarding with
 - [x] HTTP MCP transport — `litgraph serve-mcp --http` (I11)
 - [x] MCP `watch_papers_directory` — folder watch subprocess management (I12)
 
-#### v0.13 — Paper structuring
+### 1.0 — PyPI release & documentation ✅
 
-Improve parse → section → extract → build for academic PDFs. Same graph schema and MCP surface (plus Section nodes / `CONTAINS`); no new ingest adapters.
-
-- [ ] Golden set first — expected sections / citations / evidence for `examples/papers/`, enforced in pytest; every item below is measured against it
-- [ ] PDF section diagnostics — failure modes, confidence, repair hints; benchmark GROBID / docling vs in-house splitter on the golden set to decide how far to push the custom parser (I04)
-- [ ] Citation resolution accuracy — title fuzzing + DOI / arXiv IDs, optional Semantic Scholar lookup with offline fallback; merge itself already ships in `graph_builder.py` (I05)
-- [ ] In-graph embeddings (I15) — store vectors as node properties instead of `cache/{ws}/embeddings.json`:
-  - Kuzu (default): `FLOAT[]` property + vector index (HNSW extension) for similarity search
-  - Neo4j (optional backend): array property + native vector index, behind the same store interface
-  - Search path: replace full-JSON load + Python cosine in `query/embedding_store.py` with store-side queries
-  - Lifecycle: vectors live and die with the graph — no more stale "ghost" vectors after DB re-index
-  - Keep out of the graph store: `paper_registry.json` (identity must survive DB wipe) and `cache/parsed` / `cache/extracted` (LLM-cost pipeline caches)
-- [ ] Section / subsection hierarchy — `CONTAINS` edges + section-level embeddings in the same re-index, stored in-graph via I15 (I03)
-- [ ] Extraction grounding — reliable `page` / `section` / `evidence_text` on claims, limitations, contributions
-
-**Migration:** v0.13 requires a re-index (same policy as v0.6 / v0.10): Section nodes, `CONTAINS` edges, and in-graph vectors are populated at build time; legacy `embeddings.json` is read once as a fallback and can be deleted afterwards.
-
-### 1.0 — PyPI release & documentation
-
-Once v0.13 and core workflows are solid, document the full flow.
+Stable PyPI release and full-flow documentation.
 
 - [x] Documentation and tutorial — `docs/TUTORIAL.md` (`setup` / `index` → MCP → viz → Zotero; Kuzu single-writer policy)
 - [x] Quickstart smoke test in CI — `tests/test_quickstart_smoke.py` + `quickstart` job in `.github/workflows/test.yml`
@@ -252,7 +253,7 @@ Packaging groundwork before v2.0. Does not block IDEA items (I07, I14, CSV, etc.
 
 #### v1.2+ — Feature minors (TBD)
 
-Assign remaining IDEA Matrix items — e.g. I07 (`paper_id_map` auto-gen), CSV connector (I02 remainder), I14 (Zotero write-back), claim-level embeddings.
+Assign remaining IDEA Matrix items — e.g. I07 (`paper_id_map` auto-gen), CSV connector (I02 remainder), I14 (Zotero write-back), claim-level embeddings. I03 / I04 diagnostics / I05 / I15 stay on the [ongoing quality track](#ongoing-paper-structuring-quality) and may land in any 1.x without a dedicated “structuring” version.
 
 ### 2.0 — End-user distribution
 

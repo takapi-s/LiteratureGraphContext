@@ -207,3 +207,19 @@ Suggested design (high level):
   - `python3 -m pytest tests/ --ignore=tests/test_watch.py` (or full suite ~7min)
   - `litgraph serve-mcp --http --port 8000`
   - `from litgraph import LitgraphContext`
+
+---
+
+## 2026-07-11 - Paper structuring is ongoing quality, not v0.13
+
+- What we learned / decided:
+  - Former **v0.13** (golden set, PDF diagnostics, citation accuracy, in-graph embeddings, `CONTAINS`, extraction grounding) is reframed as a permanent **ongoing quality track**, not a release version between 0.12 and 1.0.
+  - Version line is `0.12 → 1.0 → 1.1 → 1.x → 2.0`; structuring work lands in any 1.x without a dedicated version number.
+- Why it matters:
+  - Matches how the team actually works: pipeline quality is always in scope, while daemon polish and installers ship on their own cadence.
+  - Avoids treating structuring as a gate that “blocks” 1.0 (already shipped) or 2.0.
+- Where it's implemented:
+  - `ROADMAP.md` — `## Ongoing: paper structuring quality`; IDEA targets I03/I04/I05/I15 → `ongoing quality`; version diagram note
+  - `docs/TUTORIAL.md` — Next steps link wording
+- Verification:
+  - `rg 'v0\.13' ROADMAP.md` should only mention the historical rename, not a milestone section
