@@ -129,16 +129,26 @@ def scan_papers(
     return {
         "total": len(files),
         "changed": len(changed),
+        "changed_paths": changed,
         "files": [_rel_path(ctx, f) for f in files],
         "papers_dir": str(ctx.papers_dir),
     }
 
 
-def parse_papers(ctx: ResolvedContext, only_changed: bool = True, *, verbose: bool = False) -> Dict[str, Any]:
+def parse_papers(
+    ctx: ResolvedContext,
+    only_changed: bool = True,
+    *,
+    verbose: bool = False,
+    changed_paths: Optional[List[Path]] = None,
+) -> Dict[str, Any]:
     target = ctx.papers_dir
     ctx.bib_cache_dir.mkdir(parents=True, exist_ok=True)
     files = discover_papers(target)
-    _, changed = scan_and_update(files, ctx.files_cache_path, ctx.project_root)
+    if changed_paths is None:
+        _, changed = scan_and_update(files, ctx.files_cache_path, ctx.project_root)
+    else:
+        changed = changed_paths
     to_parse = collect_parse_targets(files, only_changed, changed)
     file_cache = load_cache(ctx.files_cache_path)
 
@@ -698,10 +708,48 @@ def extract_papers_async(
     return job_id
 
 
+def _stub_extraction_from_parsed(parsed: Dict[str, Any]) -> Dict[str, Any]:
+    """Minimal extraction so ``--no-extract`` still indexes Paper nodes from parse cache."""
+    paper_id = str(parsed.get("paper_id") or "")
+    source_path = str(parsed.get("source_path") or parsed.get("path") or "")
+    stem = Path(source_path).stem if source_path else paper_id
+    return {
+        "paper_id": paper_id,
+        "title": str(parsed.get("title") or stem or paper_id),
+        "year": parsed.get("year"),
+        "authors": parsed.get("authors") or [],
+        "source_path": source_path,
+        "source_stem": stem,
+        "tasks": [],
+        "methods": [],
+        "datasets": [],
+        "metrics": [],
+        "contributions": [],
+        "claims": [],
+        "limitations": [],
+    }
+
+
 def build_paper_graph(ctx: ResolvedContext, enrich_s2: bool = False) -> Dict[str, Any]:
     extractions: List[Dict[str, Any]] = []
+    extracted_ids: set[str] = set()
     for ef in sorted(ctx.extracted_cache_dir.glob("*.json")):
-        extractions.append(json.loads(ef.read_text(encoding="utf-8")))
+        data = json.loads(ef.read_text(encoding="utf-8"))
+        extractions.append(data)
+        pid = str(data.get("paper_id") or "")
+        if pid:
+            extracted_ids.add(pid)
+    # Without LLM extract, still index papers from parse cache (structure + title).
+    for pf in sorted(ctx.parsed_cache_dir.glob("*.json")):
+        try:
+            parsed = json.loads(pf.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        pid = str(parsed.get("paper_id") or "")
+        if not pid or pid in extracted_ids:
+            continue
+        extractions.append(_stub_extraction_from_parsed(parsed))
+        extracted_ids.add(pid)
     if not extractions and not list(ctx.bib_cache_dir.glob("*.json")):
         return {"papers_indexed": 0, "message": "No extracted papers or bib cache found."}
     return build_graph(ctx, extractions, enrich_s2=enrich_s2)
@@ -722,7 +770,13 @@ def index_papers(
 ) -> Dict[str, Any]:
     """Run scan → parse → (optional) extract → build as one pipeline."""
     scan = scan_papers(ctx, papers_path, persist_dir=papers_path is not None)
-    parse_result = parse_papers(ctx, only_changed=not all_files, verbose=False)
+    # Reuse scan's changed list — a second scan_and_update would see nothing as changed.
+    parse_result = parse_papers(
+        ctx,
+        only_changed=not all_files,
+        verbose=False,
+        changed_paths=None if all_files else scan.get("changed_paths"),
+    )
 
     extract_result: Dict[str, Any] = {"extracted": 0, "skipped": 0, "skipped_step": True}
     if not no_extract:

@@ -35,18 +35,27 @@ User: "What are the gaps in prediction research?"
 
 LGC does not pre-compute narrative conclusions. It makes the graph and evidence reliable enough for agents to reason over. See [ROADMAP.md](ROADMAP.md) for how known limitations are prioritized under this model.
 
+## Documentation
+
+- **[Tutorial](docs/TUTORIAL.md)** — install → setup → index → MCP → viz → Zotero (full walkthrough)
+- [Roadmap](ROADMAP.md) — planned features and known gaps
+
 ## Quick start
 
 ```bash
-pip install -e ".[dev]"
+pip install literature-graph
 litgraph setup --papers-dir ./my-papers
 # or non-interactive:
 # litgraph init --papers-dir ./my-papers && litgraph index -y
 litgraph serve-mcp
 ```
 
+For a clone / development install: `pip install -e ".[dev]"`.
+
 `litgraph setup` walks through project init, LLM / API keys (`~/.litgraph/.env`), optional Zotero, MCP client config, and a first index.  
 `litgraph index` alone runs `scan → parse → extract → build`.
+
+For the full flow (including Kuzu single-writer rules and Windows daemon HTTP), see the [Tutorial](docs/TUTORIAL.md).
 
 ## Where to put papers
 
@@ -108,23 +117,6 @@ litgraph setup          # recommended onboarding
 # litgraph mcp setup    # alias of the same wizard
 ```
 
-### Background daemon (Zotero auto-sync)
+### Background daemon (optional)
 
-Run a single long-lived process for Zotero polling, optional folder watch, HTTP MCP, and a settings page:
-
-```bash
-litgraph daemon
-# Settings UI: http://127.0.0.1:8766/
-# MCP endpoint: http://127.0.0.1:8766/mcp
-```
-
-During `litgraph setup`, choose **daemon-http** MCP transport so Cursor connects to the daemon instead of spawning stdio `serve-mcp` (avoids Kuzu lock conflicts on Windows).
-
-**Windows autostart:** open Task Scheduler → Create Task → Trigger: At log on → Action: `litgraph daemon` with *Start in* set to your project root. Ensure `ZOTERO_API_KEY` is in `~/.litgraph/.env`.
-
-Configure sync interval and `extract_mode` (`auto` / `manual`) from the daemon settings page (`/`).
-
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for planned features and known gaps.
+For Zotero auto-sync and to avoid stdio lock conflicts on Windows, run `litgraph daemon` and choose **daemon-http** in setup. Details: [Tutorial §4](docs/TUTORIAL.md#4-connect-mcp) and [§7](docs/TUTORIAL.md#7-zotero-optional).

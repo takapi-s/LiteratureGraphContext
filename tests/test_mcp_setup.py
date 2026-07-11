@@ -55,6 +55,13 @@ def test_merge_mcp_config_preserves_other_servers(tmp_path: Path, monkeypatch):
     assert "literature-graph-context" in data["mcpServers"]
 
 
+def test_default_mcp_transport_is_platform_aware(monkeypatch):
+    monkeypatch.setattr(setup_wizard.sys, "platform", "win32")
+    assert setup_wizard._default_mcp_transport() == "daemon-http"
+    monkeypatch.setattr(setup_wizard.sys, "platform", "linux")
+    assert setup_wizard._default_mcp_transport() == "stdio"
+
+
 def test_run_setup_wizard_yes_is_noninteractive(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         setup_wizard, "resolve_litgraph_mcp_command", lambda: ("/usr/bin/litgraph", ["serve-mcp"])

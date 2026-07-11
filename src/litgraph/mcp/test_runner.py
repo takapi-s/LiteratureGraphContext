@@ -16,7 +16,14 @@ console = Console()
 
 def run_mcp_smoke_tests(cwd: Optional[Path] = None, *, verbose: bool = False) -> Dict[str, Any]:
     service = MCPToolService(cwd)
-    cases = project_smoke_cases(service)
+    try:
+        cases = project_smoke_cases(service)
+    except Exception as exc:
+        console.print(f"[red]Failed to load project graph:[/red] {exc}")
+        console.print(
+            "[dim]Run: litgraph index -y   (or litgraph index -y --no-extract)[/dim]"
+        )
+        return {"passed": 0, "failed": 1, "results": [{"tool": "_init", "ok": False, "detail": str(exc)}]}
     if not cases:
         console.print(
             "[red]No indexed papers found.[/red] Run: "

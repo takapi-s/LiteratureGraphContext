@@ -9,6 +9,7 @@ __pycache__/
 /dist/
 /build/
 website/node_modules/
+website/dist/
 mcp.json
 
 # Reference implementation (clone separately)

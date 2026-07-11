@@ -86,4 +86,4 @@ Supported inputs under `papers_dir`: `.pdf` (full pipeline), `.md` (notes), `.bi
 
 - CLI entry: `litgraph.cli.main`
 - MCP server and tools: `litgraph.mcp.server`, `tool_definitions.py`, `tool_service.py`
-- User docs: `README.md`, `docs/literature_graph_mcp_implementation_plan.md`
+- User docs: `README.md`, `docs/TUTORIAL.md`

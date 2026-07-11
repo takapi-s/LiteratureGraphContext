@@ -34,6 +34,11 @@ _PROVIDER_DEFAULT_MODELS = {
 _SERVER_NAME = "literature-graph-context"
 
 
+def _default_mcp_transport() -> str:
+    """Windows defaults to daemon-http to avoid stdio Kuzu lock conflicts."""
+    return "daemon-http" if sys.platform == "win32" else "stdio"
+
+
 def resolve_litgraph_mcp_command() -> tuple[str, list[str]]:
     """Return (command, args) to run `litgraph serve-mcp` on any platform."""
     litgraph = shutil.which("litgraph")
@@ -280,10 +285,11 @@ def _configure_client(root: Path) -> Optional[Path]:
     else:
         target = root / "mcp.json"
 
+    default_transport = _default_mcp_transport()
     transport = Prompt.ask(
         "MCP transport",
         choices=["stdio", "daemon-http"],
-        default="daemon-http",
+        default=default_transport,
     )
     if transport == "daemon-http":
         port_raw = Prompt.ask("Daemon HTTP port", default="8766").strip() or "8766"
@@ -378,16 +384,27 @@ def _run_first_index(root: Path, *, use_zotero: bool) -> None:
 def _final_hints(root: Path, mcp_out: Optional[Path]) -> None:
     _, _, has_graph = _papers_status(root)
     if not has_graph:
-        console.print("\n[dim]When ready:[/dim] litgraph index")
+        console.print("\n[dim]When ready:[/dim] litgraph index -y")
+        console.print("[dim]No API key yet?[/dim] litgraph index -y --no-extract")
     else:
         console.print("\n[dim]Verify MCP tools with:[/dim] litgraph test-mcp")
     console.print(
-        "\n[dim]For Zotero auto-sync + settings UI, run:[/dim] litgraph daemon"
+        "\n[dim]Full walkthrough:[/dim] docs/TUTORIAL.md "
+        "(setup → index → MCP → viz → Zotero)"
     )
-    console.print(
-        "[dim]Windows autostart: register `litgraph daemon` in Task Scheduler "
-        "(At log on).[/dim]"
-    )
+    if sys.platform == "win32":
+        console.print(
+            "[dim]Windows: prefer[/dim] litgraph daemon "
+            "[dim]+ daemon-http MCP (avoids Kuzu lock conflicts).[/dim]"
+        )
+        console.print(
+            "[dim]Autostart: Task Scheduler → At log on →[/dim] litgraph daemon"
+        )
+    else:
+        console.print(
+            "[dim]Optional long-running hub:[/dim] litgraph daemon "
+            "[dim](Zotero auto-sync + settings UI + HTTP MCP)[/dim]"
+        )
     if mcp_out is not None:
         console.print("[dim]Restart your MCP client to pick up the new configuration.[/dim]")
 

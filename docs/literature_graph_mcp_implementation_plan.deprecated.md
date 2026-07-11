@@ -1,5 +1,8 @@
 # LiteratureGraph MCP 実装計画
 
+> **Deprecated (v1.0):** User-facing docs are [TUTORIAL.md](TUTORIAL.md) and the [README](../README.md).  
+> This file is kept as historical design notes from early development (pre-v0.5). Do not treat it as current product documentation.
+
 ## 1. 目的
 
 LiteratureGraph MCP は、文献PDFフォルダを読み取り、論文内容を構造化して Knowledge Graph 化し、MCP 経由で AI アシスタントに渡すための OSS である。

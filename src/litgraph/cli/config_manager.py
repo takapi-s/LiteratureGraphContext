@@ -258,7 +258,15 @@ def init_project(project_root: Path, papers_dir: Optional[str] = None) -> Path:
 
 
 def _path_for_config(path: Path, project_root: Path) -> str:
-    resolved = path.resolve()
+    """Store papers_dir relative to project_root when possible.
+
+    Relative paths are resolved against ``project_root``, not the process cwd,
+    so ``init_project(root, papers_dir="papers")`` works from any working directory.
+    """
+    if path.is_absolute():
+        resolved = path.resolve()
+    else:
+        resolved = (project_root / path).resolve()
     try:
         rel = resolved.relative_to(project_root.resolve())
         return str(rel)

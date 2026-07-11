@@ -1,9 +1,9 @@
 # LiteratureGraphContext Roadmap
 
-> **Current version**: 0.12.0  
+> **Current version**: 1.0.0  
 > **Last updated**: 2026-07
 
-Remaining OSS (`literature-graph` on PyPI) tasks and known constraints. For implementation history before v0.5, see [docs/literature_graph_mcp_implementation_plan.md](docs/literature_graph_mcp_implementation_plan.md).
+Remaining OSS (`literature-graph` on PyPI) tasks and known constraints. For early design history (pre-v0.5), see [docs/literature_graph_mcp_implementation_plan.deprecated.md](docs/literature_graph_mcp_implementation_plan.deprecated.md). User docs: [docs/TUTORIAL.md](docs/TUTORIAL.md).
 
 ## Design philosophy
 
@@ -34,10 +34,10 @@ LGC is a **structured evidence layer** (not an interpretation engine).
 | ✅ | v0.10 workspace | `workspace_id` scoping complete |
 | ✅ | v0.11 Zotero + PDF | Full pipeline + PDF section improvements complete |
 | ✅ | v0.12 Remote MCP & watch | HTTP MCP + `watch_papers_directory` complete |
-| 1 | v0.13 Paper structuring | Section hierarchy, citation linking, extraction quality, evidence grounding |
-| Last | v1.0 PyPI + docs | First stable `pip install literature-graph` after v0.13 |
+| Last | v1.0 PyPI + docs | First stable `pip install literature-graph` — packaging ready; publish via tag |
 | Next | v1.1 Background daemon | Zotero auto-sync, HTTP MCP hub, settings UI (mostly shipped) |
 | Later | v1.x → v2.0 | v1.x: packaging prep (PyInstaller, supervisor); **v2.0: OS installers** (Python not required) |
+| Parallel | v0.13 Paper structuring | Section hierarchy, citation linking, extraction quality (continues after 1.0) |
 
 **v0.13 scope** (in recommended order — measure first, then improve):
 
@@ -118,7 +118,7 @@ Distribution has **two channels** — do not conflate them:
 
 | Series | Meaning |
 |---|---|
-| **0.x** | Pre-PyPI development releases (current: 0.12.0 → 0.13) |
+| **0.x** | Pre-PyPI development releases (through 0.12) |
 | **1.0** | First stable **PyPI** release + documentation |
 | **1.x** | Feature additions after 1.0 (semver minor); includes background daemon (v1.1) |
 | **2.0** | **End-user distribution** — PyInstaller-frozen binaries, OS installers (Inno Setup / DMG / deb), PySide6 system-tray supervisor, logon autostart, GitHub Releases + WinGet (breaking API changes may ride along) |
@@ -204,13 +204,17 @@ Improve parse → section → extract → build for academic PDFs. Same graph sc
 
 Once v0.13 and core workflows are solid, document the full flow.
 
-- [ ] Documentation and tutorial — `setup` / `index` → MCP → viz → Zotero; include Kuzu single-writer policy (closes the "MCP stability" limitation)
-- [ ] Quickstart smoke test in CI — run the README command sequence so docs can't rot silently
-- [ ] Onboarding polish — `litgraph setup` + `litgraph index` shipped; keep docs aligned as workflows settle
-- [ ] Repo hygiene — remove `external/` reference clones (zotero / graphiti / CodeGraphContext; zero code references, link from docs instead); stop tracking `website/node_modules` and `dist/` tarballs
-- [ ] CI hardening — coverage reporting; PyPI publish workflow (trusted publishing)
-- [ ] PyPI release — packaging and semver-stable programmatic API
+- [x] Documentation and tutorial — `docs/TUTORIAL.md` (`setup` / `index` → MCP → viz → Zotero; Kuzu single-writer policy)
+- [x] Quickstart smoke test in CI — `tests/test_quickstart_smoke.py` + `quickstart` job in `.github/workflows/test.yml`
+- [x] Onboarding polish — `litgraph setup` / `index` aligned with Tutorial; Windows defaults to daemon-http; final hints point at `docs/TUTORIAL.md`
+- [x] Repo hygiene — `external/` gitignored (not tracked); stop tracking `website/dist/`; `implementation_plan` deprecated
+- [x] CI hardening — coverage in test job (`pytest-cov`); PyPI publish workflow (`.github/workflows/publish.yml`, trusted publishing)
+- [x] PyPI packaging — `version = "1.0.0"`, project URLs, static assets in wheel; publish via GitHub Release after PyPI OIDC setup
 
+**Publish checklist (manual once):**
+
+1. On [PyPI trusted publishers](https://pypi.org/manage/account/publishing/): owner `takapi-s`, repo `LiteratureGraphContext`, workflow `publish.yml`, **Environment name left blank**
+2. Merge to `main`, then `git tag v1.0.0 && git push origin v1.0.0` and publish a GitHub Release (triggers `.github/workflows/publish.yml`)
 ### Post-1.0 (1.x)
 
 #### v1.1 — Background daemon
