@@ -70,13 +70,36 @@ async def mcp_http_lifespan(
                 before_shutdown()
 
 
+class _MCPASGIApp:
+    """Raw ASGI wrapper so FastAPI does not DI-parse or double-send the response."""
+
+    def __init__(self, transport_holder: list) -> None:
+        self._holder = transport_holder
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") != "http":
+            return
+        if not self._holder:
+            from starlette.responses import JSONResponse
+
+            await JSONResponse({"detail": "MCP transport not ready"}, status_code=503)(
+                scope, receive, send
+            )
+            return
+        await self._holder[0].handle_request(scope, receive, send)
+
+
 def register_mcp_http_route(app, transport_holder: list) -> None:
-    from fastapi import Request
+    """Register ``/mcp`` for Streamable HTTP via a raw ASGI route.
 
-    @app.api_route("/mcp", methods=["GET", "POST", "DELETE"])
-    async def mcp_endpoint(request: Request) -> None:
-        if not transport_holder:
-            from fastapi import HTTPException
+    A FastAPI endpoint with a function-local ``Request`` import returns HTTP 422
+    under ``from __future__ import annotations`` (``request`` is treated as a
+    query param). Returning ``None`` after writing via ``request._send`` also
+    double-sends the response. A Starlette ASGI class avoids both issues.
+    """
+    from starlette.routing import Route
 
-            raise HTTPException(status_code=503, detail="MCP transport not ready")
-        await transport_holder[0].handle_request(request.scope, request.receive, request._send)
+    app.router.routes.insert(
+        0,
+        Route("/mcp", endpoint=_MCPASGIApp(transport_holder), methods=["GET", "POST", "DELETE"]),
+    )
